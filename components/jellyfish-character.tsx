@@ -5,6 +5,7 @@
     import { useKeyboardControls, useTexture } from "@react-three/drei"
     import { Vector3 } from "three"
     import * as THREE from "three"
+    import { assetPath } from "../lib/utils"
 
     // This component combines player control logic with the user's new, more complex jellyfish model.
     export default function JellyfishCharacter({ resetTrigger, onPositionChange }) {
@@ -37,7 +38,7 @@
       const MAX_HEIGHT = 3
 
       // --- Jellyfish specific setup from user's code ---
-      const texture = useTexture("/placeholder.svg?height=256&width=256")
+      const texture = useTexture(assetPath("/placeholder.svg"))
       const bellGeometry = useMemo(() => new THREE.SphereGeometry(1, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.5), [])
       const tentacleCylinderGeometry = useMemo(() => new THREE.CylinderGeometry(1, 1, 1, 8), [])
 
