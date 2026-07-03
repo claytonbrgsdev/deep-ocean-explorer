@@ -2,7 +2,7 @@
 
 import { useMemo, forwardRef, useImperativeHandle } from "react"
 import * as THREE from "three"
-import { GLSL_STROKE } from "@/lib/ocean"
+import { GLSL_GESTURE } from "@/lib/ocean"
 
 // ---------------------------------------------------------------------------
 // JellyBody — shared anatomy for the player and every NPC jellyfish.
@@ -130,15 +130,17 @@ const STRAND_VERT = /* glsl */ `
   varying float vT;
   varying float vPhase;
   varying float vKick;
-  ${GLSL_STROKE}
+  ${GLSL_GESTURE}
   void main() {
     float t = -position.y; // 0 at bell attachment, 1 at tip
     vT = t;
     vPhase = aPhase;
 
-    // power-stroke envelope, delayed down the strand: the whip travels
-    // base → tip, so the kick you see is the jet that pushes the body
-    float kick = strokeEnv(uPulse - t * 2.6);
+    // gesture envelope, delayed down the strand and de-phased per strand:
+    // slow build, long decay, low sustain — a gesture, not a snap.
+    // runs at HALF the pulse rate: the body pulses, the limbs phrase.
+    float cyc = uPulse / 12.5663706;
+    float kick = gestureEnv(cyc - t * 0.24 - aPhase * 0.045);
     vKick = kick;
 
     vec3 p;
@@ -147,21 +149,30 @@ const STRAND_VERT = /* glsl */ `
     p.z = position.z * aThick * taper;
     p.y = position.y * aLen;
 
-    // during the stroke the strand straightens and extends (water expelled)
-    p.y *= 1.0 + 0.22 * kick;
+    // gentle extension as the gesture builds
+    p.y *= 1.0 + 0.10 * kick;
 
-    // fluid sway — damped while the stroke is firing, free while coasting
-    float swayAmp = 1.0 - 0.65 * kick;
-    float sway1 = sin(uTime * 1.6 + aPhase + t * 5.2) * (0.10 + 0.55 * t) * swayAmp;
-    float sway2 = cos(uTime * 1.05 + aPhase * 1.71 + t * 3.6) * (0.08 + 0.42 * t) * swayAmp;
-    p.x += sway1 * t;
-    p.z += sway2 * t;
+    // languid sway — three slow incommensurate waves, reach grows toward
+    // the tip quadratically so the strand curves instead of hinging
+    float swayAmp = 1.0 - 0.35 * kick;
+    float reach = (t * t * 0.85 + t * 0.25);
+    float w1 = sin(uTime * 1.05 + aPhase + t * 4.0);
+    float w2 = cos(uTime * 0.71 + aPhase * 1.71 + t * 2.8);
+    float w3 = sin(uTime * 0.43 + aPhase * 2.3 + t * 1.6);
+    p.x += (w1 * 0.42 + w3 * 0.34) * reach * swayAmp;
+    p.z += (w2 * 0.42 + w3 * 0.26) * reach * swayAmp;
+
+    // gather-and-release: mid-strand curls toward the axis as the gesture
+    // peaks, then flows back out through the release
+    float curl = kick * sin(t * 3.14159) * 0.34;
+    p.x -= cos(aAngle) * curl;
+    p.z -= sin(aAngle) * curl;
 
     // hydrodynamic drag: strands trail opposite to motion, more at the tip
     p -= uVelLocal * (t * t) * 1.1;
 
-    // attach to bell rim; rim squeezes inward on the stroke (funnel jet)
-    float rimSqueeze = 1.0 - 0.30 * kick;
+    // attach to bell rim; soft funnel on the gesture peak
+    float rimSqueeze = 1.0 - 0.16 * kick;
     p.x += cos(aAngle) * aRadius * rimSqueeze;
     p.z += sin(aAngle) * aRadius * rimSqueeze;
     p.y += 0.02;
@@ -182,9 +193,10 @@ const STRAND_FRAG = /* glsl */ `
     // bioluminescent shimmer traveling down the strand
     float shimmer = 0.5 + 0.5 * sin(uTime * 2.6 + vPhase * 2.0 - vT * 9.0);
     vec3 col = mix(uColorTent, uColorGlow, shimmer * 0.6 + uGlowBoost * 0.4);
-    // the power stroke lights the strand up as it whips
-    col += uColorGlow * vKick * 0.55;
-    float alpha = (0.55 * (1.0 - vT) + 0.12) * (0.75 + 0.25 * shimmer) * (1.0 + 0.35 * vKick);
+    // the gesture breathes light into the strand (re-zeroed above sustain)
+    float gest = max(0.0, (vKick - 0.05) / 0.95);
+    col += uColorGlow * gest * 0.4;
+    float alpha = (0.55 * (1.0 - vT) + 0.12) * (0.75 + 0.25 * shimmer) * (1.0 + 0.25 * gest);
     gl_FragColor = vec4(col, alpha);
   }
 `

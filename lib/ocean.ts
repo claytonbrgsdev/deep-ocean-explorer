@@ -202,6 +202,30 @@ export const GLSL_STROKE = /* glsl */ `
   }
 `
 
+// Gesture envelope for the tentacles — deliberately NOT the thrust envelope.
+// The body snaps (physics), the limbs *gesture*: slow attack (~30% of the
+// cycle), long decay reaching the 5% sustain floor at ~75%, and a release
+// that flows smoothly into the next attack (C1-continuous, no corners).
+export const GLSL_GESTURE = /* glsl */ `
+  float gestureEnv(float cycles) {
+    float x = fract(cycles);
+    float A = 0.30;
+    float D = 0.45;
+    float S = 0.05;
+    if (x < A) {
+      float t = x / A;
+      t = t * t * (3.0 - 2.0 * t);
+      return mix(S, 1.0, t);
+    }
+    if (x < A + D) {
+      float t = (x - A) / D;
+      t = t * t * (3.0 - 2.0 * t);
+      return mix(1.0, S, t);
+    }
+    return S;
+  }
+`
+
 // ---------------------------------------------------------------------------
 // Shared GLSL chunks — inlined into every ShaderMaterial (no .glsl pipeline,
 // same philosophy as v1 but centralized instead of copy-pasted).
