@@ -1,97 +1,148 @@
 "use client"
 
-export default function HUD({ position }) {
-  const depth = Math.max(0, Math.round((10 + position.y) * -1))
-  
-  // Determine depth zone for display
-  const getDepthZone = (depth) => {
-    if (depth <= 2) return { name: "Surface", color: "text-cyan-200", bg: "bg-cyan-500/20" }
-    if (depth <= 5) return { name: "Shallow", color: "text-blue-200", bg: "bg-blue-500/20" }
-    if (depth <= 10) return { name: "Medium", color: "text-blue-300", bg: "bg-blue-600/20" }
-    if (depth <= 15) return { name: "Deep", color: "text-indigo-300", bg: "bg-indigo-600/20" }
-    return { name: "Abyss", color: "text-purple-300", bg: "bg-purple-700/20" }
-  }
-  
-  const depthZone = getDepthZone(depth)
-  
+import { useEffect, useState, useRef } from "react"
+import { ocean, ZONES } from "@/lib/ocean"
+
+// ---------------------------------------------------------------------------
+// HUD — samples the mutable ocean store at 8Hz. The 3D loop never calls
+// setState; React work is decoupled from the render loop entirely.
+// ---------------------------------------------------------------------------
+
+interface Sample {
+  depth: number
+  x: number
+  z: number
+  speed: number
+  zoneIndex: number
+  light: number
+  fps: number
+}
+
+export default function HUD() {
+  const [s, setS] = useState<Sample>({ depth: 6, x: 0, z: 0, speed: 0, zoneIndex: 0, light: 100, fps: 0 })
+  const frames = useRef({ count: 0, last: performance.now(), fps: 60 })
+
+  // cheap FPS meter: count rAF ticks between HUD samples
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      frames.current.count++
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = performance.now()
+      const f = frames.current
+      const fps = Math.round((f.count * 1000) / Math.max(now - f.last, 1))
+      f.count = 0
+      f.last = now
+      const zone = ZONES[ocean.zoneIndex]
+      setS({
+        depth: ocean.depth,
+        x: ocean.playerPos.x,
+        z: ocean.playerPos.z,
+        speed: ocean.speed,
+        zoneIndex: ocean.zoneIndex,
+        light: Math.round(zone.light * 100),
+        fps,
+      })
+    }, 125)
+    return () => clearInterval(id)
+  }, [])
+
+  const zone = ZONES[s.zoneIndex]
+  const maxDepth = 60
+  const markerPct = Math.min(100, (s.depth / maxDepth) * 100)
+
   return (
-    <div className="absolute bottom-4 left-4 bg-black/80 text-cyan-300 p-4 rounded-lg border border-cyan-400/50 z-10 backdrop-blur-sm">
-      <div className="text-cyan-100 font-bold mb-3 flex items-center gap-2">
-        🌊 Deep Ocean Explorer
+    <div className="pointer-events-none absolute inset-0 z-10 select-none font-mono">
+      {/* vignette + subtle water tint */}
+      <div className="absolute inset-0" style={{ boxShadow: "inset 0 0 180px 40px rgba(0,10,30,0.55)" }} />
+
+      {/* title */}
+      <div className="absolute top-5 left-1/2 -translate-x-1/2 text-center">
+        <h1 className="text-cyan-100/90 tracking-[0.45em] text-sm md:text-base font-semibold">
+          DEEP OCEAN EXPLORER
+        </h1>
+        <p className="text-cyan-400/60 text-[10px] tracking-[0.3em] mt-1">V2 — REALTIME GLSL REBUILD</p>
       </div>
-      <div className="space-y-1 text-sm">
-        <div className="flex justify-between gap-4">
-          <span className="text-cyan-400">Position:</span>
-          <span>X: {position.x}</span>
+
+      {/* depth gauge */}
+      <div className="absolute left-5 top-1/2 -translate-y-1/2 flex items-stretch gap-2">
+        <div className="relative w-2 h-64 rounded-full overflow-hidden border border-cyan-300/20"
+          style={{ background: "linear-gradient(to bottom, #2fb4d8, #12688e 25%, #07456b 45%, #032440 70%, #000306)" }}>
+          <div
+            className="absolute left-0 right-0 h-[3px] bg-cyan-100 shadow-[0_0_8px_2px_rgba(140,240,255,0.9)] transition-[top] duration-150"
+            style={{ top: `${markerPct}%` }}
+          />
         </div>
-        <div className="flex justify-between gap-4">
-          <span></span>
-          <span>Y: {position.y}</span>
-        </div>
-        <div className="flex justify-between gap-4">
-          <span></span>
-          <span>Z: {position.z}</span>
+        <div className="flex flex-col justify-between text-[9px] text-cyan-200/50 py-0.5">
+          <span>0m</span>
+          <span>30m</span>
+          <span>60m</span>
         </div>
       </div>
-      
-      {/* Enhanced depth display with zone information */}
-      <div className="mt-3 pt-3 border-t border-cyan-500/30">
-        <div className="flex justify-between gap-4 text-sm mb-2">
-          <span className="text-cyan-400">Depth:</span>
-          <span className={`${depth > 15 ? 'text-red-400' : depth > 10 ? 'text-yellow-400' : 'text-cyan-300'}`}>
-            {depth}m below surface
+
+      {/* telemetry panel */}
+      <div className="absolute bottom-5 left-5 rounded-lg border border-cyan-300/20 bg-[#02121f]/70 backdrop-blur-md px-4 py-3 text-[11px] leading-5 text-cyan-100/85 min-w-[210px]">
+        <div className="flex justify-between gap-6">
+          <span className="text-cyan-400/70">DEPTH</span>
+          <span className="tabular-nums">{s.depth.toFixed(1)} m</span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-cyan-400/70">ZONE</span>
+          <span className="text-cyan-50">{zone.name}</span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-cyan-400/70">SPEED</span>
+          <span className="tabular-nums">{s.speed.toFixed(1)} m/s</span>
+        </div>
+        <div className="flex justify-between gap-6">
+          <span className="text-cyan-400/70">POSITION</span>
+          <span className="tabular-nums">
+            {s.x.toFixed(0)} · {s.z.toFixed(0)}
           </span>
         </div>
-        
-        {/* Depth zone indicator */}
-        <div className={`text-xs px-2 py-1 rounded ${depthZone.bg} ${depthZone.color} text-center mb-2`}>
-          {depthZone.name} Zone
-        </div>
-      </div>
-      
-      {/* Depth indicator bar */}
-      <div className="mt-2">
-        <div className="w-full bg-blue-900/50 rounded-full h-2">
-          <div 
-            className="bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${Math.min(100, (depth / 20) * 100)}%` }}
-          />
+        <div className="mt-2">
+          <div className="flex justify-between gap-6 mb-1">
+            <span className="text-cyan-400/70">SUNLIGHT</span>
+            <span className="tabular-nums">{s.light}%</span>
+          </div>
+          <div className="h-1 rounded bg-cyan-950 overflow-hidden">
+            <div
+              className="h-full rounded bg-gradient-to-r from-amber-200 via-cyan-300 to-cyan-500 transition-[width] duration-300"
+              style={{ width: `${s.light}%` }}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Light penetration indicator */}
-      <div className="mt-2">
-        <div className="flex justify-between text-xs text-cyan-400 mb-1">
-          <span>Light Penetration:</span>
-          <span>{Math.max(5, Math.round((1 - depth / 20) * 100))}%</span>
-        </div>
-        <div className="w-full bg-gray-700/50 rounded-full h-1">
-          <div 
-            className="bg-gradient-to-r from-yellow-300 via-blue-400 to-purple-600 h-1 rounded-full transition-all duration-300"
-            style={{ width: `${Math.max(5, (1 - depth / 20) * 100)}%` }}
-          />
-        </div>
+      {/* fps */}
+      <div className="absolute top-5 right-5 rounded border border-cyan-300/15 bg-[#02121f]/60 px-2.5 py-1 text-[10px] text-cyan-200/70 tabular-nums">
+        {s.fps} FPS
       </div>
 
-      {/* Marine life indicator */}
-      <div className="mt-3 pt-2 border-t border-cyan-500/30">
-        <div className="text-xs text-cyan-400 flex items-center gap-2">
-          🐠 Marine Life Active
-          <div className="flex gap-1">
-            <div className="w-1 h-1 bg-orange-400 rounded-full animate-pulse"></div>
-            <div className="w-1 h-1 bg-blue-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-            <div className="w-1 h-1 bg-yellow-400 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-          </div>
-        </div>
-        <div className="text-xs text-purple-400 flex items-center gap-2 mt-1">
-          🎐 Jellyfish Drifting
-          <div className="flex gap-1">
-            <div className="w-1 h-1 bg-purple-400 rounded-full animate-pulse" style={{ animationDelay: '0.1s' }}></div>
-            <div className="w-1 h-1 bg-cyan-400 rounded-full animate-pulse" style={{ animationDelay: '0.3s' }}></div>
-            <div className="w-1 h-1 bg-pink-400 rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
-          </div>
-        </div>
+      {/* controls */}
+      <div className="absolute bottom-5 right-5 text-right text-[10px] leading-5 text-cyan-200/45">
+        <p>
+          <Key>W A S D</Key> swim &nbsp; <Key>SPACE</Key> rise &nbsp; <Key>SHIFT</Key> dive
+        </p>
+        <p>
+          <Key>DRAG</Key> orbit camera &nbsp; <Key>SCROLL</Key> zoom
+        </p>
       </div>
     </div>
+  )
+}
+
+function Key({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-block rounded border border-cyan-300/25 bg-cyan-300/5 px-1.5 py-px text-cyan-100/80">
+      {children}
+    </span>
   )
 }
