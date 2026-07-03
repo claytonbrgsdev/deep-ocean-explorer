@@ -24,6 +24,11 @@ export const ocean = {
   pulsePhase: 0,
 }
 
+// dev-console access for tuning/inspection (harmless in prod)
+if (typeof window !== "undefined") {
+  ;(window as unknown as { __ocean: typeof ocean }).__ocean = ocean
+}
+
 export interface DepthZone {
   name: string
   /** depth (positive meters) where the zone begins */
@@ -162,6 +167,40 @@ export function fbm2(x: number, y: number, octaves = 4): number {
   }
   return sum
 }
+
+// ---------------------------------------------------------------------------
+// Propulsion stroke envelope — ADSR-like curve over one pulse cycle.
+// Attack: bell snaps shut (fast rise). Decay: jet tapers off exponentially.
+// Sustain: ~0 (jellyfish coast between pulses). Release: hydrodynamic drag
+// bleeding the velocity back down (handled by the physics integrator).
+//
+// The SAME curve exists in JS (thrust force) and GLSL (tentacle whip), so
+// what you see the tentacles do is exactly what pushes the body forward.
+// ---------------------------------------------------------------------------
+
+const STROKE_ATTACK = 0.12 // fraction of the cycle spent contracting
+const STROKE_DECAY = 5.5 // exponential falloff rate after the snap
+
+/** phase in radians (2π = one pulse). Returns 0..1 thrust envelope. */
+export function strokeEnvelope(phase: number): number {
+  const x = phase / (Math.PI * 2) - Math.floor(phase / (Math.PI * 2))
+  if (x < STROKE_ATTACK) {
+    const t = x / STROKE_ATTACK
+    return t * t * (3 - 2 * t) // smooth attack
+  }
+  return Math.exp(-(x - STROKE_ATTACK) * STROKE_DECAY)
+}
+
+export const GLSL_STROKE = /* glsl */ `
+  float strokeEnv(float phase) {
+    float x = fract(phase / 6.2831853);
+    if (x < ${STROKE_ATTACK}) {
+      float t = x / ${STROKE_ATTACK};
+      return t * t * (3.0 - 2.0 * t);
+    }
+    return exp(-(x - ${STROKE_ATTACK}) * ${STROKE_DECAY});
+  }
+`
 
 // ---------------------------------------------------------------------------
 // Shared GLSL chunks — inlined into every ShaderMaterial (no .glsl pipeline,

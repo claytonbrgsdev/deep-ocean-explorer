@@ -2,6 +2,7 @@
 
 import { useMemo, forwardRef, useImperativeHandle } from "react"
 import * as THREE from "three"
+import { GLSL_STROKE } from "@/lib/ocean"
 
 // ---------------------------------------------------------------------------
 // JellyBody — shared anatomy for the player and every NPC jellyfish.
@@ -68,13 +69,14 @@ const BELL_VERT = /* glsl */ `
   varying vec3 vLocal;
   void main() {
     vec3 pos = position;
-    // traveling contraction: apex (y=1) leads, rim (y<=0) follows
+    // traveling contraction: apex (y=1) leads, rim (y<=0) follows.
+    // positive wave = radial squeeze + axial stretch (volume-conserving jet)
     float rimW = smoothstep(0.9, 0.0, position.y);
     float wave = sin(uPhase - position.y * 2.8);
-    float squeeze = 1.0 + uAmp * wave * rimW;
+    float squeeze = 1.0 - uAmp * wave * rimW;
     pos.x *= squeeze;
     pos.z *= squeeze;
-    pos.y *= 1.0 - uAmp * 0.45 * wave * rimW;
+    pos.y *= 1.0 + uAmp * 0.45 * wave * rimW;
     // gentle rim ruffle
     float ang = atan(position.z, position.x);
     pos.xz += normalize(position.xz + vec2(1e-4)) * 0.02 * sin(ang * 14.0 + uTime * 2.3) * rimW;
@@ -118,6 +120,7 @@ const BELL_FRAG = /* glsl */ `
 
 const STRAND_VERT = /* glsl */ `
   uniform float uTime;
+  uniform float uPulse;
   uniform vec3 uVelLocal;
   attribute float aAngle;
   attribute float aRadius;
@@ -126,10 +129,17 @@ const STRAND_VERT = /* glsl */ `
   attribute float aThick;
   varying float vT;
   varying float vPhase;
+  varying float vKick;
+  ${GLSL_STROKE}
   void main() {
     float t = -position.y; // 0 at bell attachment, 1 at tip
     vT = t;
     vPhase = aPhase;
+
+    // power-stroke envelope, delayed down the strand: the whip travels
+    // base → tip, so the kick you see is the jet that pushes the body
+    float kick = strokeEnv(uPulse - t * 2.6);
+    vKick = kick;
 
     vec3 p;
     float taper = 1.0 - t * 0.72;
@@ -137,18 +147,23 @@ const STRAND_VERT = /* glsl */ `
     p.z = position.z * aThick * taper;
     p.y = position.y * aLen;
 
-    // fluid sway — two incommensurate waves traveling down the strand
-    float sway1 = sin(uTime * 1.6 + aPhase + t * 5.2) * (0.10 + 0.55 * t);
-    float sway2 = cos(uTime * 1.05 + aPhase * 1.71 + t * 3.6) * (0.08 + 0.42 * t);
+    // during the stroke the strand straightens and extends (water expelled)
+    p.y *= 1.0 + 0.22 * kick;
+
+    // fluid sway — damped while the stroke is firing, free while coasting
+    float swayAmp = 1.0 - 0.65 * kick;
+    float sway1 = sin(uTime * 1.6 + aPhase + t * 5.2) * (0.10 + 0.55 * t) * swayAmp;
+    float sway2 = cos(uTime * 1.05 + aPhase * 1.71 + t * 3.6) * (0.08 + 0.42 * t) * swayAmp;
     p.x += sway1 * t;
     p.z += sway2 * t;
 
     // hydrodynamic drag: strands trail opposite to motion, more at the tip
     p -= uVelLocal * (t * t) * 1.1;
 
-    // attach to bell rim
-    p.x += cos(aAngle) * aRadius;
-    p.z += sin(aAngle) * aRadius;
+    // attach to bell rim; rim squeezes inward on the stroke (funnel jet)
+    float rimSqueeze = 1.0 - 0.30 * kick;
+    p.x += cos(aAngle) * aRadius * rimSqueeze;
+    p.z += sin(aAngle) * aRadius * rimSqueeze;
     p.y += 0.02;
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -162,11 +177,14 @@ const STRAND_FRAG = /* glsl */ `
   uniform float uGlowBoost;
   varying float vT;
   varying float vPhase;
+  varying float vKick;
   void main() {
     // bioluminescent shimmer traveling down the strand
     float shimmer = 0.5 + 0.5 * sin(uTime * 2.6 + vPhase * 2.0 - vT * 9.0);
     vec3 col = mix(uColorTent, uColorGlow, shimmer * 0.6 + uGlowBoost * 0.4);
-    float alpha = (0.55 * (1.0 - vT) + 0.12) * (0.75 + 0.25 * shimmer);
+    // the power stroke lights the strand up as it whips
+    col += uColorGlow * vKick * 0.55;
+    float alpha = (0.55 * (1.0 - vT) + 0.12) * (0.75 + 0.25 * shimmer) * (1.0 + 0.35 * vKick);
     gl_FragColor = vec4(col, alpha);
   }
 `
@@ -232,6 +250,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
       depthWrite: false,
       uniforms: {
         uTime: shared.time,
+        uPulse: shared.phase,
         uVelLocal: shared.velLocal,
         uGlowBoost: shared.glowBoost,
         uColorTent: { value: new THREE.Color(palette.tentacle) },
@@ -302,6 +321,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     const m = strandMaterial.clone()
     m.side = THREE.DoubleSide
     m.uniforms.uTime = shared.time
+    m.uniforms.uPulse = shared.phase
     m.uniforms.uVelLocal = shared.velLocal
     m.uniforms.uGlowBoost = shared.glowBoost
     return m

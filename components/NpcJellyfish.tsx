@@ -4,7 +4,7 @@ import { useRef, useMemo } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import JellyBody, { JellyBodyHandle, JELLY_VARIANTS } from "./JellyBody"
-import { ocean, WORLD, valueNoise2 } from "@/lib/ocean"
+import { ocean, WORLD, valueNoise2, strokeEnvelope } from "@/lib/ocean"
 
 // ---------------------------------------------------------------------------
 // NPC jellyfish — 12 individuals, 6 color morphs, 8-pattern behavior FSM.
@@ -192,7 +192,7 @@ function Npc({ npc }: { npc: NpcState }) {
     const phase = time * Math.PI * 2 * npc.pulseHz + npc.phaseOffset
     body.uniforms.time.value = time + npc.phaseOffset
     body.uniforms.phase.value = phase
-    body.uniforms.amp.value = 0.12
+    body.uniforms.amp.value = 0.05 + 0.16 * strokeEnvelope(phase)
     s.invQuat.copy(group.quaternion).invert()
     s.velLocal.copy(npc.vel).applyQuaternion(s.invQuat).multiplyScalar(0.2)
     body.uniforms.velLocal.value.copy(s.velLocal)
