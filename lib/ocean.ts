@@ -14,11 +14,11 @@ export const WORLD = {
 }
 
 export const ocean = {
-  playerPos: new THREE.Vector3(0, -6, 0),
+  playerPos: new THREE.Vector3(0, -20, 0),
   playerVel: new THREE.Vector3(0, 0, 0),
   playerQuat: new THREE.Quaternion(),
   speed: 0,
-  depth: 6,
+  depth: 20,
   zoneIndex: 0,
   zoneBlend: 0, // 0..1 progress inside current zone (for HUD gauge)
   pulsePhase: 0,

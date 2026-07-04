@@ -83,8 +83,10 @@ export function DepthLighting() {
 
 const BG_VERT = /* glsl */ `
   varying vec3 vWorld;
+  varying vec3 vLocal;
   void main() {
     vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+    vLocal = position; // sphere is camera-centered: local pos = view direction
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `
@@ -92,15 +94,21 @@ const BG_VERT = /* glsl */ `
 const BG_FRAG = /* glsl */ `
   uniform vec3 uTop;
   uniform vec3 uBottom;
+  uniform vec3 uHaze;
   uniform float uLight;
   varying vec3 vWorld;
+  varying vec3 vLocal;
   void main() {
     float h = clamp((vWorld.y + 260.0) / 520.0, 0.0, 1.0);
     vec3 col = mix(uBottom, uTop, pow(h, 1.4));
     // faint sun glow overhead, fades with depth
-    vec3 dir = normalize(vWorld);
+    vec3 dir = normalize(vLocal);
     float sun = pow(max(0.0, dir.y), 18.0) * uLight;
     col += vec3(0.55, 0.75, 0.85) * sun * 0.5;
+    // underwater horizon: the view dissolves into scattered haze at eye
+    // level — no hard line where surface meets distance
+    float horiz = exp(-abs(dir.y + 0.06) * 5.0);
+    col = mix(col, uHaze, horiz * 0.85);
     gl_FragColor = vec4(col, 1.0);
   }
 `
@@ -108,7 +116,10 @@ const BG_FRAG = /* glsl */ `
 export function OceanBackground() {
   const matRef = useRef<THREE.ShaderMaterial>(null)
   const meshRef = useRef<THREE.Mesh>(null)
-  const cur = useMemo(() => ({ top: ZONES[0].bgTop.clone(), bottom: ZONES[0].bgBottom.clone(), light: 1 }), [])
+  const cur = useMemo(
+    () => ({ top: ZONES[0].bgTop.clone(), bottom: ZONES[0].bgBottom.clone(), haze: ZONES[0].fog.clone(), light: 1 }),
+    []
+  )
 
   useFrame((state, dt) => {
     const delta = Math.min(dt, 0.05)
@@ -116,10 +127,12 @@ export function OceanBackground() {
     const k = 1 - Math.exp(-1.6 * delta)
     cur.top.lerp(zone.bgTop, k)
     cur.bottom.lerp(zone.bgBottom, k)
+    cur.haze.lerp(zone.fog, k)
     cur.light += (zone.light - cur.light) * k
     if (matRef.current) {
       matRef.current.uniforms.uTop.value.copy(cur.top)
       matRef.current.uniforms.uBottom.value.copy(cur.bottom)
+      matRef.current.uniforms.uHaze.value.copy(cur.haze)
       matRef.current.uniforms.uLight.value = cur.light
     }
     if (meshRef.current) meshRef.current.position.copy(state.camera.position)
@@ -138,6 +151,7 @@ export function OceanBackground() {
         uniforms={{
           uTop: { value: ZONES[0].bgTop.clone() },
           uBottom: { value: ZONES[0].bgBottom.clone() },
+          uHaze: { value: ZONES[0].fog.clone() },
           uLight: { value: 1 },
         }}
       />
@@ -150,43 +164,55 @@ export function OceanBackground() {
 const SURF_VERT = /* glsl */ `
   ${GLSL_NOISE}
   uniform float uTime;
-  varying vec3 vPos;
   varying float vWave;
+  varying float vDist;
   void main() {
+    // noise sampled in WORLD space so the pattern stays put while the
+    // plane itself follows the camera (an endless surface)
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    float w = dn_fbm(vec3(wp.x * 0.06, wp.z * 0.06, uTime * 0.25));
     vec3 pos = position;
-    float w = dn_fbm(vec3(position.x * 0.06, position.y * 0.06, uTime * 0.25));
     pos.z += w * 1.6; // plane is rotated: local z becomes world y
     vWave = w;
-    vPos = pos;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+    vDist = length(mv.xyz);
+    gl_Position = projectionMatrix * mv;
   }
 `
 
 const SURF_FRAG = /* glsl */ `
   uniform float uTime;
   uniform float uLight;
-  varying vec3 vPos;
   varying float vWave;
+  varying float vDist;
   void main() {
     // seen from below: bright shifting membrane
     float sparkle = pow(vWave, 3.0) * 2.4;
     vec3 col = mix(vec3(0.06, 0.35, 0.5), vec3(0.7, 0.95, 1.0), sparkle);
-    float alpha = (0.35 + sparkle * 0.4) * uLight;
+    // dissolve into the horizon haze long before the plane's edge
+    float fade = smoothstep(340.0, 90.0, vDist);
+    float alpha = (0.35 + sparkle * 0.4) * uLight * fade;
     gl_FragColor = vec4(col * uLight, alpha);
   }
 `
 
 export function WaterSurface() {
   const matRef = useRef<THREE.ShaderMaterial>(null)
+  const meshRef = useRef<THREE.Mesh>(null)
   useFrame((state) => {
     if (matRef.current) {
       matRef.current.uniforms.uTime.value = state.clock.elapsedTime
       matRef.current.uniforms.uLight.value = ZONES[ocean.zoneIndex].light
     }
+    // endless surface: the plane rides along with the camera
+    if (meshRef.current) {
+      meshRef.current.position.x = state.camera.position.x
+      meshRef.current.position.z = state.camera.position.z
+    }
   })
   return (
-    <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, WORLD.surfaceY, 0]}>
-      <planeGeometry args={[420, 420, 64, 64]} />
+    <mesh ref={meshRef} rotation={[Math.PI / 2, 0, 0]} position={[0, WORLD.surfaceY, 0]}>
+      <planeGeometry args={[900, 900, 72, 72]} />
       <shaderMaterial
         ref={matRef}
         vertexShader={SURF_VERT}

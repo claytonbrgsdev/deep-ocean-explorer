@@ -20,7 +20,9 @@ import { terrainHeight } from "./Seafloor"
 // power stroke (envelope attack), then drag bleeds it off — the speed curve
 // looks like an ADSR: snap up, exponential decay, coast, next pulse.
 const STROKE_ACCEL = 54
-const IDLE_ACCEL = 5
+// idle pulses nearly balance the coasting sink: the jelly hovers with a
+// slow pulse-rise / coast-sink breathing instead of ballooning to the top
+const IDLE_ACCEL = 2.4
 const DRAG = 2.1
 const MAX_SPEED = 8
 const IDLE_PULSE_HZ = 0.7
@@ -52,7 +54,7 @@ export default function PlayerJellyfish() {
       right: new THREE.Vector3(),
       camTarget: new THREE.Vector3(),
       camPos: new THREE.Vector3(),
-      lazyLook: new THREE.Vector3(0, -6, 0),
+      lazyLook: new THREE.Vector3(0, -20, 0),
       quat: new THREE.Quaternion(),
       invQuat: new THREE.Quaternion(),
       m4: new THREE.Matrix4(),
@@ -181,7 +183,7 @@ export default function PlayerJellyfish() {
     }
     // buoyancy bob + slow sink while coasting (real jellies pulse-and-sink)
     ocean.playerVel.y += Math.sin(t * 0.6) * 0.15 * delta
-    if (!hasInput) ocean.playerVel.y -= 0.22 * (1 - env) * delta
+    if (!hasInput) ocean.playerVel.y -= 0.5 * (1 - env) * delta
 
     // drag + speed clamp
     ocean.playerVel.multiplyScalar(Math.max(0, 1 - DRAG * delta))
@@ -266,7 +268,7 @@ export default function PlayerJellyfish() {
   })
 
   return (
-    <group ref={groupRef} position={[0, -6, 0]}>
+    <group ref={groupRef} position={[0, -20, 0]}>
       <JellyBody ref={bodyRef} palette={JELLY_VARIANTS[0]} tentacles={30} oralArms={4} seed={7} />
       <pointLight ref={lightRef} color="#8fd8ff" distance={16} decay={1.8} intensity={2.5} />
     </group>

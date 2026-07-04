@@ -23,7 +23,7 @@ export default function Scene() {
       <HUD />
       <Canvas
         dpr={[1, 1.75]}
-        camera={{ position: [0, -4, 10], fov: 60, near: 0.1, far: 600 }}
+        camera={{ position: [0, -18, 10], fov: 60, near: 0.1, far: 600 }}
         gl={{
           antialias: true,
           alpha: false,

@@ -19,7 +19,7 @@ interface Sample {
 }
 
 export default function HUD() {
-  const [s, setS] = useState<Sample>({ depth: 6, x: 0, z: 0, speed: 0, zoneIndex: 0, light: 100, fps: 0 })
+  const [s, setS] = useState<Sample>({ depth: 20, x: 0, z: 0, speed: 0, zoneIndex: 1, light: 75, fps: 0 })
   const frames = useRef({ count: 0, last: performance.now(), fps: 60 })
 
   // cheap FPS meter: count rAF ticks between HUD samples
