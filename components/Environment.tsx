@@ -523,8 +523,8 @@ export function BioMotes() {
     if (matRef.current) {
       matRef.current.uniforms.uTime.value = state.clock.elapsedTime
       matRef.current.uniforms.uCenter.value.copy(ocean.playerPos)
-      // ramp up as sunlight dies: 0 above 18m, full below ~45m
-      const target = THREE.MathUtils.clamp((ocean.depth - 18) / 27, 0, 1)
+      // ramp up as sunlight dies: 0 above 30m, full below ~65m
+      const target = THREE.MathUtils.clamp((ocean.depth - 30) / 35, 0, 1)
       matRef.current.uniforms.uDeep.value += (target - matRef.current.uniforms.uDeep.value) * 0.03
     }
   })

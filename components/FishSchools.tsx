@@ -25,7 +25,7 @@ interface SchoolDef {
 const SCHOOLS: SchoolDef[] = [
   { count: 60, color: "#9fc4d8", center: new THREE.Vector3(20, -14, -15), range: 30, speed: 0.9, size: 0.8, spread: 3.2, seed: 11 },
   { count: 45, color: "#ffd257", center: new THREE.Vector3(-30, -27, 20), range: 26, speed: 0.7, size: 1.05, spread: 4.2, seed: 37 },
-  { count: 50, color: "#ff7f6b", center: new THREE.Vector3(5, -42, 35), range: 28, speed: 0.55, size: 0.68, spread: 2.8, seed: 71 },
+  { count: 50, color: "#ff7f6b", center: new THREE.Vector3(5, -52, 35), range: 28, speed: 0.55, size: 0.68, spread: 2.8, seed: 71 },
 ]
 
 // slim fish silhouette: stretched octahedron reads as a fish at a distance

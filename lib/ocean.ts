@@ -9,7 +9,7 @@ import * as THREE from "three"
 
 export const WORLD = {
   surfaceY: 0,
-  floorY: -60,
+  floorY: -120,
   bounds: 85, // horizontal half-extent for player + NPCs
 }
 
@@ -79,7 +79,7 @@ export const ZONES: DepthZone[] = [
   },
   {
     name: "TWILIGHT ZONE",
-    from: 21,
+    from: 22,
     ambient: c("#2d6f9c"),
     ambientIntensity: 0.38,
     sun: c("#5c9cc4"),
@@ -93,7 +93,7 @@ export const ZONES: DepthZone[] = [
   },
   {
     name: "MIDNIGHT DEEP",
-    from: 36,
+    from: 42,
     ambient: c("#16405f"),
     ambientIntensity: 0.24,
     sun: c("#2a5b80"),
@@ -107,14 +107,14 @@ export const ZONES: DepthZone[] = [
   },
   {
     name: "ABYSSAL PLAIN",
-    from: 48,
+    from: 70,
     ambient: c("#0a1c30"),
     ambientIntensity: 0.16,
     sun: c("#123048"),
     sunIntensity: 0.12,
     fog: c("#01080f"),
-    fogNear: 7,
-    fogFar: 44,
+    fogNear: 8,
+    fogFar: 58,
     bgTop: c("#02101e"),
     bgBottom: c("#000306"),
     light: 0.05,

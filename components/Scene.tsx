@@ -5,6 +5,7 @@ import PlayerJellyfish from "./PlayerJellyfish"
 import NpcJellyfish from "./NpcJellyfish"
 import FishSchools from "./FishSchools"
 import Seafloor from "./Seafloor"
+import AbyssalForest from "./AbyssalForest"
 import HUD from "./HUD"
 import {
   DepthLighting,
@@ -40,6 +41,7 @@ export default function Scene() {
         <Bubbles />
 
         <Seafloor />
+        <AbyssalForest />
         <FishSchools />
         <NpcJellyfish />
 

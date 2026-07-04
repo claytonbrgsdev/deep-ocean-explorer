@@ -51,12 +51,12 @@ function pickDuration() {
 }
 
 function makeNpc(i: number): NpcState {
-  const depth = rand(4, 54)
+  const depth = rand(4, 112)
   const angle = rand(0, Math.PI * 2)
   const radius = rand(12, WORLD.bounds * 0.8)
   const pos = new THREE.Vector3(Math.cos(angle) * radius, -depth, Math.sin(angle) * radius)
   // deep individuals get the abyssal-red morph, shallow ones the bright morphs
-  const variant = depth > 44 ? 5 : i % 5
+  const variant = depth > 65 ? 5 : i % 5
   return {
     pattern: PATTERNS[i % PATTERNS.length],
     t: rand(0, 4),

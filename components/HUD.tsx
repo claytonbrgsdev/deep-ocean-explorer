@@ -55,7 +55,7 @@ export default function HUD() {
   }, [])
 
   const zone = ZONES[s.zoneIndex]
-  const maxDepth = 60
+  const maxDepth = 120
   const markerPct = Math.min(100, (s.depth / maxDepth) * 100)
 
   return (
@@ -82,8 +82,8 @@ export default function HUD() {
         </div>
         <div className="flex flex-col justify-between text-[9px] text-cyan-200/50 py-0.5">
           <span>0m</span>
-          <span>30m</span>
           <span>60m</span>
+          <span>120m</span>
         </div>
       </div>
 
