@@ -121,6 +121,7 @@ const BELL_FRAG = /* glsl */ `
 const STRAND_VERT = /* glsl */ `
   uniform float uTime;
   uniform float uPulse;
+  uniform float uAmp;
   uniform vec3 uVelLocal;
   attribute float aAngle;
   attribute float aRadius;
@@ -179,10 +180,14 @@ const STRAND_VERT = /* glsl */ `
     // hydrodynamic drag: strands trail opposite to motion, more at the tip
     p -= uVelLocal * (t * t) * 1.1;
 
-    // attach to bell rim; soft funnel on the gesture peak
-    float rimSqueeze = 1.0 - 0.16 * kick;
-    p.x += cos(aAngle) * aRadius * rimSqueeze;
-    p.z += sin(aAngle) * aRadius * rimSqueeze;
+    // attach to bell rim — the attachment ring breathes with the EXACT
+    // contraction the bell rim shader applies (1 - uAmp·sin(uPulse) at the
+    // rim), so bell and tentacle roots stay physically welded. The radius
+    // change then travels down the strand with lag and fading influence.
+    float rimWave = sin(uPulse - t * 3.5);
+    float rimFollow = 1.0 - uAmp * rimWave * (1.0 - t * 0.8);
+    p.x += cos(aAngle) * aRadius * rimFollow;
+    p.z += sin(aAngle) * aRadius * rimFollow;
     p.y += 0.02;
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -271,6 +276,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
       uniforms: {
         uTime: shared.time,
         uPulse: shared.phase,
+        uAmp: shared.amp,
         uVelLocal: shared.velLocal,
         uGlowBoost: shared.glowBoost,
         uColorTent: { value: new THREE.Color(palette.tentacle) },
@@ -343,6 +349,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     m.side = THREE.DoubleSide
     m.uniforms.uTime = shared.time
     m.uniforms.uPulse = shared.phase
+    m.uniforms.uAmp = shared.amp
     m.uniforms.uVelLocal = shared.velLocal
     m.uniforms.uGlowBoost = shared.glowBoost
     return m
