@@ -3,8 +3,9 @@
 import { useRef, useMemo } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
-import JellyBody, { JellyBodyHandle, JELLY_VARIANTS } from "./JellyBody"
+import JellyBody, { JellyBodyHandle } from "./JellyBody"
 import { ocean, WORLD, valueNoise2, strokeEnvelope } from "@/lib/ocean"
+import { SPECIES, JellyConfig } from "@/lib/species"
 
 // ---------------------------------------------------------------------------
 // NPC jellyfish — 12 individuals, 6 color morphs, 8-pattern behavior FSM.
@@ -36,7 +37,7 @@ interface NpcState {
   phaseOffset: number
   pulseHz: number
   scale: number
-  variant: number
+  cfg: JellyConfig
   angVel: number
   noiseSeed: number
 }
@@ -56,7 +57,11 @@ function makeNpc(i: number): NpcState {
   const radius = rand(12, WORLD.bounds * 0.8)
   const pos = new THREE.Vector3(Math.cos(angle) * radius, -depth, Math.sin(angle) * radius)
   // deep individuals get the abyssal-red morph, shallow ones the bright morphs
-  const variant = depth > 65 ? 5 : i % 5
+  // NPCs are citizens of the Jelly Lab: deep water belongs to the ABYSSAL
+  // morph, the sunlit column gets the other five species round-robin
+  const shallow = SPECIES.filter((s) => s.id !== "abyssal")
+  const sp = depth > 65 ? SPECIES.find((s) => s.id === "abyssal")! : shallow[i % shallow.length]
+  const cfg = sp.config
   return {
     pattern: PATTERNS[i % PATTERNS.length],
     t: rand(0, 4),
@@ -65,9 +70,9 @@ function makeNpc(i: number): NpcState {
     pos,
     vel: new THREE.Vector3(),
     phaseOffset: rand(0, Math.PI * 2),
-    pulseHz: rand(0.55, 1.05),
+    pulseHz: rand(0.55, 1.05) * cfg.pulseMult,
     scale: rand(0.45, 1.15),
-    variant,
+    cfg,
     angVel: rand(0.25, 0.6),
     noiseSeed: rand(0, 100),
   }
@@ -206,18 +211,26 @@ function Npc({ npc }: { npc: NpcState }) {
     s.velLocal.copy(npc.vel).applyQuaternion(s.invQuat).multiplyScalar(0.2)
     body.uniforms.velLocal.value.copy(s.velLocal)
     // abyssal morphs glow harder the deeper the player goes
-    const depthBoost = npc.variant === 5 ? Math.min(1, ocean.depth / 50) * 0.5 : 0
+    const depthBoost = npc.cfg.species === "abyssal" ? Math.min(1, ocean.depth / 90) * 0.5 : 0
     body.uniforms.glowBoost.value = 0.2 + depthBoost
   })
 
+  // full species anatomy, scaled down a touch (NPCs read lighter than the
+  // player) and jittered by the individual's own size roll
+  const cfg = npc.cfg
   return (
-    <group ref={groupRef} position={npc.pos} scale={npc.scale}>
+    <group ref={groupRef} position={npc.pos} scale={npc.scale * cfg.scale}>
       <JellyBody
         ref={bodyRef}
-        palette={JELLY_VARIANTS[npc.variant]}
-        tentacles={20}
-        oralArms={3}
+        palette={cfg.palette}
+        tentacles={Math.max(14, Math.round(cfg.tentacles * 0.7))}
+        oralArms={Math.max(2, cfg.oralArms - 1)}
         seed={Math.floor(npc.noiseSeed * 97) + 3}
+        bellWidth={cfg.bellWidth}
+        bellHeight={cfg.bellHeight}
+        tentacleLen={cfg.tentacleLen}
+        tipGlow={cfg.tipGlow}
+        aura={cfg.aura}
       />
     </group>
   )

@@ -20,15 +20,6 @@ export interface JellyPalette {
   tentacle: string
 }
 
-export const JELLY_VARIANTS: JellyPalette[] = [
-  { bell: "#bfe3ff", glow: "#7fd4ff", organ: "#ffb7d9", tentacle: "#a8c6ff" }, // moon
-  { bell: "#ffd2ec", glow: "#ff6fb5", organ: "#ff4d94", tentacle: "#ff9fd0" }, // rose
-  { bell: "#ffe3b3", glow: "#ffb347", organ: "#ff7847", tentacle: "#ffc37f" }, // amber
-  { bell: "#d9b8ff", glow: "#b06fff", organ: "#7f3fff", tentacle: "#c49fff" }, // violet
-  { bell: "#8fe8d2", glow: "#3fd4a8", organ: "#2fb88f", tentacle: "#7fdcc0" }, // lagoon
-  { bell: "#ff8f8f", glow: "#ff3b3b", organ: "#c41818", tentacle: "#ff6b6b" }, // abyssal red
-]
-
 export interface JellyUniforms {
   time: { value: number }
   phase: { value: number }
