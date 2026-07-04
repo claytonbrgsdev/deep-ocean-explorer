@@ -57,6 +57,8 @@ export default function PlayerJellyfish() {
       lazyLook: new THREE.Vector3(0, -20, 0),
       quat: new THREE.Quaternion(),
       invQuat: new THREE.Quaternion(),
+      lagQuat: new THREE.Quaternion(),
+      relQuat: new THREE.Quaternion(),
       m4: new THREE.Matrix4(),
       up: new THREE.Vector3(0, 1, 0),
       velLocal: new THREE.Vector3(),
@@ -208,6 +210,13 @@ export default function PlayerJellyfish() {
       s.quat.identity()
       group.quaternion.slerp(s.quat, 1 - Math.exp(-1.2 * delta))
     }
+
+    // --- rotational drag: a ghost orientation trails the body. Strand
+    // roots follow the bell NOW; tips still live in this recent past. ---
+    s.lagQuat.slerp(group.quaternion, 1 - Math.exp(-2.6 * delta))
+    s.relQuat.copy(group.quaternion).invert().multiply(s.lagQuat)
+    s.m4.makeRotationFromQuaternion(s.relQuat)
+    body.uniforms.lagMat.value.setFromMatrix4(s.m4)
 
     // --- feed the body shaders (uniform writes only, zero allocations) ---
     body.uniforms.time.value = t

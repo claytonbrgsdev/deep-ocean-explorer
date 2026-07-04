@@ -35,6 +35,9 @@ export interface JellyUniforms {
   amp: { value: number }
   velLocal: { value: THREE.Vector3 }
   glowBoost: { value: number }
+  /** rotation from the CURRENT body orientation to a time-lagged one —
+   * strand tips live in the past, roots in the present */
+  lagMat: { value: THREE.Matrix3 }
 }
 
 export interface JellyBodyHandle {
@@ -140,6 +143,7 @@ const STRAND_VERT = /* glsl */ `
   uniform float uPulse;
   uniform float uAmp;
   uniform float uArm;
+  uniform mat3 uLagMat;
   uniform vec3 uVelLocal;
   attribute float aAngle;
   attribute float aRadius;
@@ -216,8 +220,9 @@ const STRAND_VERT = /* glsl */ `
     p.x += tiltX * t;
     p.z += tiltZ * t;
 
-    // hydrodynamic drag: linear term leans the root, quadratic drags the tip
-    p -= uVelLocal * (t * 0.5 + t * t * 1.1);
+    // hydrodynamic drag: linear term leans the root, quadratic drags the tip.
+    // water is dense, the strand is light — it resists being carried
+    p -= uVelLocal * (t * 0.6 + t * t * 1.35);
 
     // attach to bell rim — the attachment ring breathes with the EXACT
     // asymmetric contraction the bell rim shader applies (same bellWave),
@@ -229,6 +234,16 @@ const STRAND_VERT = /* glsl */ `
     p.x += cos(aAngle) * aRadius * rimFollow;
     p.z += sin(aAngle) * aRadius * rimFollow;
     p.y += 0.02;
+
+    // rotational drag: the water is dense, the strand is light. The bell's
+    // turn (yaw AND tilt) reaches the strand as a cascade — the root is
+    // welded to the rim (follows the bell now), while points further down
+    // still live in the bell's RECENT PAST orientation (uLagMat), with a
+    // quadratic weight so the tip sweeps farthest behind and folds anywhere
+    // along its length.
+    vec3 lagged = uLagMat * p;
+    float lw = clamp(t * 0.25 + t * t * 0.75, 0.0, 1.0);
+    p = mix(p, lagged, lw * 0.92);
 
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
@@ -298,6 +313,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
       amp: { value: 0.14 },
       velLocal: { value: new THREE.Vector3() },
       glowBoost: { value: 0 },
+      lagMat: { value: new THREE.Matrix3() },
     }),
     []
   )
@@ -334,6 +350,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
         uPulse: shared.phase,
         uAmp: shared.amp,
         uArm: { value: 0 },
+        uLagMat: shared.lagMat,
         uVelLocal: shared.velLocal,
         uGlowBoost: shared.glowBoost,
         uColorTent: { value: new THREE.Color(palette.tentacle) },
@@ -344,7 +361,8 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
 
   // thin trailing tentacles
   const tentacleGeometry = useMemo(() => {
-    const geo = new THREE.CylinderGeometry(1, 0.45, 1, 5, 30, true)
+    // 48 height segments: the strand can fold at any point of its length
+    const geo = new THREE.CylinderGeometry(1, 0.45, 1, 5, 48, true)
     geo.translate(0, -0.5, 0)
     const inst = new THREE.InstancedBufferGeometry()
     inst.index = geo.index
@@ -408,6 +426,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     m.uniforms.uPulse = shared.phase
     m.uniforms.uAmp = shared.amp
     m.uniforms.uArm.value = 1
+    m.uniforms.uLagMat = shared.lagMat
     m.uniforms.uVelLocal = shared.velLocal
     m.uniforms.uGlowBoost = shared.glowBoost
     return m

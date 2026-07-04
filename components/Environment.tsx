@@ -106,9 +106,9 @@ const BG_FRAG = /* glsl */ `
     float sun = pow(max(0.0, dir.y), 18.0) * uLight;
     col += vec3(0.55, 0.75, 0.85) * sun * 0.5;
     // underwater horizon: the view dissolves into scattered haze at eye
-    // level — no hard line where surface meets distance
-    float horiz = exp(-abs(dir.y + 0.06) * 5.0);
-    col = mix(col, uHaze, horiz * 0.85);
+    // level — wide, near-total absorption so no line survives
+    float horiz = exp(-abs(dir.y + 0.05) * 2.4);
+    col = mix(col, uHaze, horiz * 0.96);
     gl_FragColor = vec4(col, 1.0);
   }
 `
@@ -190,7 +190,7 @@ const SURF_FRAG = /* glsl */ `
     float sparkle = pow(vWave, 3.0) * 2.4;
     vec3 col = mix(vec3(0.06, 0.35, 0.5), vec3(0.7, 0.95, 1.0), sparkle);
     // dissolve into the horizon haze long before the plane's edge
-    float fade = smoothstep(340.0, 90.0, vDist);
+    float fade = smoothstep(230.0, 55.0, vDist);
     float alpha = (0.35 + sparkle * 0.4) * uLight * fade;
     gl_FragColor = vec4(col * uLight, alpha);
   }

@@ -166,6 +166,9 @@ function Npc({ npc }: { npc: NpcState }) {
       up: new THREE.Vector3(0, 1, 0),
       dir: new THREE.Vector3(),
       invQuat: new THREE.Quaternion(),
+      lagQuat: new THREE.Quaternion(),
+      relQuat: new THREE.Quaternion(),
+      m4: new THREE.Matrix4(),
       velLocal: new THREE.Vector3(),
     }),
     []
@@ -188,6 +191,12 @@ function Npc({ npc }: { npc: NpcState }) {
       s.quat.setFromUnitVectors(s.up, s.dir)
       group.quaternion.slerp(s.quat, 1 - Math.exp(-2 * delta))
     }
+
+    // rotational drag (same trailing-ghost cascade as the player)
+    s.lagQuat.slerp(group.quaternion, 1 - Math.exp(-2.6 * delta))
+    s.relQuat.copy(group.quaternion).invert().multiply(s.lagQuat)
+    s.m4.makeRotationFromQuaternion(s.relQuat)
+    body.uniforms.lagMat.value.setFromMatrix4(s.m4)
 
     const phase = time * Math.PI * 2 * npc.pulseHz + npc.phaseOffset
     body.uniforms.time.value = time + npc.phaseOffset
