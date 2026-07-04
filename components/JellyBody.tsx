@@ -78,9 +78,11 @@ const BELL_VERT = /* glsl */ `
     pos.x *= squeeze;
     pos.z *= squeeze;
     pos.y *= 1.0 + uAmp * 0.4 * wave * rimW;
-    // gentle rim ruffle, unhurried
+    // rim ruffle with two harmonics — lappet-like scalloping, unhurried
     float ang = atan(position.z, position.x);
-    pos.xz += normalize(position.xz + vec2(1e-4)) * 0.03 * sin(ang * 14.0 + uTime * 1.6) * rimW;
+    vec2 radial = normalize(position.xz + vec2(1e-4));
+    pos.xz += radial * 0.03 * sin(ang * 14.0 + uTime * 1.6) * rimW;
+    pos.xz += radial * 0.02 * sin(ang * 7.0 - uTime * 1.1) * rimW;
 
     vLocal = position;
     vNormal = normalize(normalMatrix * normal);
@@ -114,7 +116,21 @@ const BELL_FRAG = /* glsl */ `
     col += uColorOrgan * organ * (0.55 + 0.45 * pulse);
     col += uColorGlow * uGlowBoost * (0.35 + 0.3 * pulse);
 
-    float alpha = 0.16 + fresnel * 0.6 + organ * 0.35;
+    // --- exumbrella ornaments ---
+    // radial canal stripes across the upper dome (Chrysaora-style)
+    float stripes = pow(abs(sin(ang * 8.0 + 0.4)), 6.0) * smoothstep(0.95, 0.5, rad) * smoothstep(0.18, 0.45, rad);
+    col += uColorOrgan * stripes * 0.4;
+    // fine granular speckle (wart-like texture on the dome)
+    float speck = sin(vLocal.x * 41.0) * sin(vLocal.y * 37.0 + 2.0) * sin(vLocal.z * 43.0 + 4.0);
+    speck = smoothstep(0.5, 0.95, speck);
+    col += uColorGlow * speck * 0.14;
+    // scalloped luminous band along the rim (lappet margin)
+    float rimBand = smoothstep(0.3, 0.02, vLocal.y);
+    float scallop = 0.5 + 0.5 * sin(ang * 28.0 + uTime * 0.5);
+    col += uColorGlow * rimBand * (0.12 + 0.28 * scallop);
+
+    float alpha = 0.16 + fresnel * 0.6 + organ * 0.35
+                + stripes * 0.12 + speck * 0.06 + rimBand * scallop * 0.14;
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
   }
 `
@@ -123,6 +139,7 @@ const STRAND_VERT = /* glsl */ `
   uniform float uTime;
   uniform float uPulse;
   uniform float uAmp;
+  uniform float uArm;
   uniform vec3 uVelLocal;
   attribute float aAngle;
   attribute float aRadius;
@@ -132,12 +149,14 @@ const STRAND_VERT = /* glsl */ `
   varying float vT;
   varying float vPhase;
   varying float vKick;
+  varying vec2 vUv;
   ${GLSL_GESTURE}
   ${GLSL_BELLWAVE}
   void main() {
     float t = -position.y; // 0 at bell attachment, 1 at tip
     vT = t;
     vPhase = aPhase;
+    vUv = uv;
 
     // gesture envelope, delayed down the strand and de-phased per strand:
     // slow build, long decay, low sustain — a gesture, not a snap.
@@ -179,6 +198,17 @@ const STRAND_VERT = /* glsl */ `
     p.x -= cos(aAngle) * curl;
     p.z -= sin(aAngle) * curl;
 
+    // oral-arm frill: the ribbon's edges flutter and the whole band twists
+    // gently — real oral arms are ruffled curtains, not straps
+    float edgeSide = (uv.x - 0.5) * 2.0;
+    p.x += sin(t * 20.0 + uTime * 1.4 + aPhase * 2.0) * 0.07 * t * uArm;
+    p.z += edgeSide * sin(t * 13.0 + uTime * 1.1 + aPhase) * 0.06 * uArm;
+
+    // radiate each arm ribbon outward around the axis
+    float ca = cos(aAngle);
+    float sa = sin(aAngle);
+    p.xz = mat2(ca, -sa, sa, ca) * p.xz;
+
     // loose anchor: the root ANGLE deflects easily — slow waves tilt the
     // whole strand axis linearly from the anchor point
     float tiltX = sin(uTime * 0.55 + aPhase * 1.9) * 0.20 + cos(uTime * 0.34 + aPhase) * 0.12;
@@ -206,12 +236,14 @@ const STRAND_VERT = /* glsl */ `
 
 const STRAND_FRAG = /* glsl */ `
   uniform float uTime;
+  uniform float uArm;
   uniform vec3 uColorTent;
   uniform vec3 uColorGlow;
   uniform float uGlowBoost;
   varying float vT;
   varying float vPhase;
   varying float vKick;
+  varying vec2 vUv;
   void main() {
     // bioluminescent shimmer traveling down the strand
     float shimmer = 0.5 + 0.5 * sin(uTime * 2.6 + vPhase * 2.0 - vT * 9.0);
@@ -219,8 +251,22 @@ const STRAND_FRAG = /* glsl */ `
     // the gesture breathes light into the strand (re-zeroed above sustain)
     float gest = max(0.0, (vKick - 0.05) / 0.95);
     col += uColorGlow * gest * 0.4;
+    // faint banding along thin tentacles (stinging-cell texture)
+    col *= 1.0 - 0.14 * (0.5 + 0.5 * sin(vUv.y * 90.0 + vPhase * 3.0)) * (1.0 - uArm);
     float alpha = (0.55 * (1.0 - vT) + 0.12) * (0.75 + 0.25 * shimmer) * (1.0 + 0.25 * gest);
-    gl_FragColor = vec4(col, alpha);
+
+    // oral arms: ruffled curtain — opaque fleshy core, lacy luminous edges,
+    // fine longitudinal striations
+    float edgeMask = smoothstep(0.0, 0.16, vUv.x) * smoothstep(1.0, 0.84, vUv.x);
+    float frill = 0.62 + 0.38 * sin(vUv.y * 64.0 - uTime * 1.7 + sin(vUv.x * 9.0) * 2.2);
+    float striate = 0.78 + 0.22 * sin(vUv.x * 30.0 + vUv.y * 4.0);
+    vec3 armCol = mix(uColorTent * 1.25, uColorGlow, 0.25 + 0.35 * frill) * striate;
+    armCol += uColorGlow * (1.0 - edgeMask) * 0.3; // rims catch the light
+    float armAlpha = (0.42 + 0.4 * edgeMask) * frill * (1.0 - vT * 0.5) * (1.0 + 0.2 * gest);
+
+    col = mix(col, armCol, uArm);
+    float a = mix(alpha, armAlpha, uArm);
+    gl_FragColor = vec4(col, a);
   }
 `
 
@@ -287,6 +333,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
         uTime: shared.time,
         uPulse: shared.phase,
         uAmp: shared.amp,
+        uArm: { value: 0 },
         uVelLocal: shared.velLocal,
         uGlowBoost: shared.glowBoost,
         uColorTent: { value: new THREE.Color(palette.tentacle) },
@@ -325,9 +372,9 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     return inst
   }, [tentacles, seed])
 
-  // wide frilly oral arms under the dome
+  // wide frilly oral arms under the dome — fleshy ruffled curtains
   const armGeometry = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(0.16, 1, 1, 26)
+    const geo = new THREE.PlaneGeometry(0.36, 1, 6, 40)
     geo.translate(0, -0.5, 0)
     const inst = new THREE.InstancedBufferGeometry()
     inst.index = geo.index
@@ -360,6 +407,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     m.uniforms.uTime = shared.time
     m.uniforms.uPulse = shared.phase
     m.uniforms.uAmp = shared.amp
+    m.uniforms.uArm.value = 1
     m.uniforms.uVelLocal = shared.velLocal
     m.uniforms.uGlowBoost = shared.glowBoost
     return m

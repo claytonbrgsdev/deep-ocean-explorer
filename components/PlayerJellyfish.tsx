@@ -52,6 +52,7 @@ export default function PlayerJellyfish() {
       right: new THREE.Vector3(),
       camTarget: new THREE.Vector3(),
       camPos: new THREE.Vector3(),
+      lazyLook: new THREE.Vector3(0, -6, 0),
       quat: new THREE.Quaternion(),
       invQuat: new THREE.Quaternion(),
       m4: new THREE.Matrix4(),
@@ -228,20 +229,40 @@ export default function PlayerJellyfish() {
     ocean.pulsePhase = phase
     ocean.playerQuat.copy(group.quaternion)
 
-    // --- camera rig: damped orbit follow ---
+    // --- camera rig: dreamy documentary operator, not an action game ---
     const cosP = Math.cos(o.pitch)
     s.camPos.set(
       ocean.playerPos.x + Math.sin(o.yaw) * o.dist * cosP,
       ocean.playerPos.y + Math.sin(o.pitch) * o.dist + 1.2,
       ocean.playerPos.z + Math.cos(o.yaw) * o.dist * cosP
     )
+    // breathing drift: the operator sways on slow incommensurate swells
+    s.camPos.x += Math.sin(t * 0.21) * 0.9 + Math.sin(t * 0.53 + 2.1) * 0.3
+    s.camPos.y += Math.sin(t * 0.17 + 1.3) * 0.55
+    s.camPos.z += Math.cos(t * 0.19 + 0.7) * 0.75
     // keep the camera out of the seabed
     s.camPos.y = Math.max(s.camPos.y, terrainHeight(s.camPos.x, s.camPos.z) + 1.6)
-    const damp = 1 - Math.exp(-4.5 * delta)
-    camera.position.lerp(s.camPos, damp)
+    // heavy, sleepy follow
+    camera.position.lerp(s.camPos, 1 - Math.exp(-1.4 * delta))
+
+    // lazy gaze: the look-target trails the subject instead of pinning it —
+    // the jellyfish drifts inside the frame, recentering only gradually
     s.camTarget.copy(ocean.playerPos)
     s.camTarget.y += 0.5
-    camera.lookAt(s.camTarget)
+    s.camTarget.x += Math.sin(t * 0.13 + 0.5) * 0.6
+    s.camTarget.y += Math.cos(t * 0.11) * 0.4
+    s.lazyLook.lerp(s.camTarget, 1 - Math.exp(-0.9 * delta))
+    // never lose the subject entirely
+    const gap = s.lazyLook.distanceTo(s.camTarget)
+    if (gap > 3.2) s.lazyLook.lerp(s.camTarget, 1 - 3.2 / gap)
+    camera.lookAt(s.lazyLook)
+    // a whisper of roll, like floating in the water column
+    camera.rotateZ(Math.sin(t * 0.09) * 0.02)
+    // slow FOV breathing + gentle dolly feel with speed
+    const cam = camera as THREE.PerspectiveCamera
+    const targetFov = 60 + Math.sin(t * 0.07) * 1.5 + Math.min(speed * 0.9, 5)
+    cam.fov += (targetFov - cam.fov) * (1 - Math.exp(-0.8 * delta))
+    cam.updateProjectionMatrix()
   })
 
   return (
