@@ -59,6 +59,8 @@ export default function PlayerJellyfish() {
       invQuat: new THREE.Quaternion(),
       lagQuat: new THREE.Quaternion(),
       relQuat: new THREE.Quaternion(),
+      fromDir: new THREE.Vector3(0, 1, 0),
+      steerDir: new THREE.Vector3(0, 1, 0),
       m4: new THREE.Matrix4(),
       up: new THREE.Vector3(0, 1, 0),
       velLocal: new THREE.Vector3(),
@@ -67,6 +69,9 @@ export default function PlayerJellyfish() {
   )
 
   const pulse = useRef({ phase: 0 })
+  // wind-up state: from rest, the first stroke CHARGES before it fires —
+  // deep inhale, a whisper of rotation, then the snap releases everything
+  const windup = useRef({ active: false, charge: 0, prevInput: false })
 
   useEffect(() => {
     const set = (code: string, v: boolean) => {
@@ -168,11 +173,31 @@ export default function PlayerJellyfish() {
     const hasInput = s.dir.lengthSq() > 0
     if (hasInput) s.dir.normalize()
 
+    // --- wind-up: first stroke from rest charges before it fires ---
+    const w = windup.current
+    if (hasInput && !w.prevInput && ocean.speed < 1.5) {
+      w.active = true
+      // remember where the body was pointing — during the charge it only
+      // leans a fraction of the way toward the input
+      s.fromDir.set(0, 1, 0).applyQuaternion(group.quaternion)
+      // park the pulse at the inhale trough: the bell drinks water in
+      // slow motion (~0.36s) before the attack of the cycle arrives
+      const TWO_PI = Math.PI * 2
+      pulse.current.phase = Math.ceil(pulse.current.phase / TWO_PI) * TWO_PI - 1.9
+    }
+    if (!hasInput) w.active = false
+
     // --- pulse-synchronized propulsion (ADSR stroke envelope) ---
     const targetHz = hasInput ? SWIM_PULSE_HZ : IDLE_PULSE_HZ
-    pulse.current.phase += delta * Math.PI * 2 * targetHz
+    // the charge stretches time: the inhale is deliberate, savored
+    pulse.current.phase += delta * Math.PI * 2 * targetHz * (w.active ? 0.5 : 1)
     const phase = pulse.current.phase
     const env = strokeEnvelope(phase)
+    // the arriving attack releases the charge — snap, turn and thrust land
+    // on the same instant
+    if (w.active && env > 0.4) w.active = false
+    w.charge += ((w.active ? 1 : 0) - w.charge) * (1 - Math.exp((w.active ? -9 : -5.5) * delta))
+    w.prevInput = hasInput
 
     // thrust fires along the bell axis — the jelly pushes water out of its
     // own bell, so steering only re-aims the body; the jet does the rest
@@ -201,11 +226,21 @@ export default function PlayerJellyfish() {
     group.position.copy(ocean.playerPos)
 
     // --- orientation: steer the bell toward the input; the jet does the rest.
-    // No input → righting reflex: real jellyfish re-orient bell-up, which
-    // also breaks the sink→orient-down→pulse-down feedback spiral.
+    // While CHARGING, the body only leans a whisper of the way (~12% of the
+    // arc) — it takes the power stroke to actually swing the mass through
+    // the water. Turn rate rides env², so rotation surges WITH each snap
+    // and eases off while coasting: the whole body language pulses.
+    // No input → righting reflex: real jellyfish re-orient bell-up.
     if (hasInput) {
-      s.quat.setFromUnitVectors(s.up, s.dir)
-      group.quaternion.slerp(s.quat, 1 - Math.exp(-3.0 * delta))
+      if (w.active) {
+        s.steerDir.copy(s.fromDir).lerp(s.dir, 0.12).normalize()
+        s.quat.setFromUnitVectors(s.up, s.steerDir)
+        group.quaternion.slerp(s.quat, 1 - Math.exp(-3.5 * delta))
+      } else {
+        s.quat.setFromUnitVectors(s.up, s.dir)
+        const turnRate = 0.7 + 6.5 * env * env
+        group.quaternion.slerp(s.quat, 1 - Math.exp(-turnRate * delta))
+      }
     } else {
       s.quat.identity()
       group.quaternion.slerp(s.quat, 1 - Math.exp(-1.2 * delta))
@@ -229,9 +264,11 @@ export default function PlayerJellyfish() {
     s.velLocal.copy(ocean.playerVel).applyQuaternion(s.invQuat).multiplyScalar(0.16)
     body.uniforms.velLocal.value.copy(s.velLocal)
     body.uniforms.glowBoost.value = 0.2 + 0.3 * Math.min(1, speed / MAX_SPEED) + 0.35 * env
+    body.uniforms.charge.value = w.charge
 
     if (lightRef.current) {
-      lightRef.current.intensity = 2.0 + env * 3.2
+      // the light gathers inward during the charge, then flares on the snap
+      lightRef.current.intensity = (2.0 + env * 3.2) * (1 - w.charge * 0.35)
     }
 
     // --- store telemetry for HUD / environment systems ---

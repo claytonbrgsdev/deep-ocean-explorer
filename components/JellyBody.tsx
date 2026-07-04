@@ -38,6 +38,8 @@ export interface JellyUniforms {
   /** rotation from the CURRENT body orientation to a time-lagged one —
    * strand tips live in the past, roots in the present */
   lagMat: { value: THREE.Matrix3 }
+  /** 0..1 — wind-up: the body gathers itself before the power stroke */
+  charge: { value: number }
 }
 
 export interface JellyBodyHandle {
@@ -67,6 +69,7 @@ const BELL_VERT = /* glsl */ `
   uniform float uTime;
   uniform float uPhase;
   uniform float uAmp;
+  uniform float uCharge;
   varying vec3 vNormal;
   varying vec3 vViewDir;
   varying vec3 vLocal;
@@ -78,9 +81,14 @@ const BELL_VERT = /* glsl */ `
     float rimW = smoothstep(0.9, 0.0, position.y);
     float wave = bellWave(uPhase - position.y * 2.8);
     float squeeze = 1.0 - uAmp * wave * rimW;
+    // wind-up: a deep inhale — the bell dilates past rest to draw water in,
+    // widest at the rim where the power stroke will bite
+    squeeze += uCharge * 0.14 * rimW;
     pos.x *= squeeze;
     pos.z *= squeeze;
     pos.y *= 1.0 + uAmp * 0.4 * wave * rimW;
+    // the apex rises as the body gathers — spine of the anticipation pose
+    pos.y *= 1.0 + uCharge * 0.05 * smoothstep(0.3, 0.9, position.y);
     // rim ruffle with two harmonics — lappet-like scalloping, unhurried
     float ang = atan(position.z, position.x);
     vec2 radial = normalize(position.xz + vec2(1e-4));
@@ -99,6 +107,7 @@ const BELL_FRAG = /* glsl */ `
   uniform float uTime;
   uniform float uPhase;
   uniform float uGlowBoost;
+  uniform float uCharge;
   uniform vec3 uColorBell;
   uniform vec3 uColorGlow;
   uniform vec3 uColorOrgan;
@@ -115,8 +124,10 @@ const BELL_FRAG = /* glsl */ `
     float organ = lobes * smoothstep(0.75, 0.25, rad) * smoothstep(0.15, 0.55, rad);
 
     float pulse = 0.5 + 0.5 * sin(uPhase);
-    vec3 col = mix(uColorBell * 0.35, uColorGlow, fresnel);
-    col += uColorOrgan * organ * (0.55 + 0.45 * pulse);
+    // wind-up: light withdraws from the rim and pools in the core — energy
+    // concentrating before it explodes outward on the stroke
+    vec3 col = mix(uColorBell * 0.35, uColorGlow, fresnel * (1.0 - uCharge * 0.25));
+    col += uColorOrgan * organ * (0.55 + 0.45 * pulse + uCharge * 0.35);
     col += uColorGlow * uGlowBoost * (0.35 + 0.3 * pulse);
 
     // --- exumbrella ornaments ---
@@ -143,6 +154,7 @@ const STRAND_VERT = /* glsl */ `
   uniform float uPulse;
   uniform float uAmp;
   uniform float uArm;
+  uniform float uCharge;
   uniform mat3 uLagMat;
   uniform vec3 uVelLocal;
   attribute float aAngle;
@@ -178,11 +190,16 @@ const STRAND_VERT = /* glsl */ `
     // extension as the gesture builds — a touch more expressive
     p.y *= 1.0 + 0.14 * kick;
 
+    // wind-up tension: the strand shortens like a muscle loading — tips
+    // creep upward, ready to snap long on the stroke
+    p.y *= 1.0 - uCharge * 0.06 * t;
+
     // whip-like sway: waves PROPAGATE base → tip (negative t phase) and,
     // like a real free-hanging strand, amplitude GROWS toward the tip —
     // the energy meets less mass, not more resistance. Higher spatial
     // frequency gives multiple S-curves along the strand (articulation).
-    float swayAmp = 1.0 - 0.25 * kick;
+    // during the wind-up the strand stiffens — free sway damps out
+    float swayAmp = (1.0 - 0.25 * kick) * (1.0 - uCharge * 0.35);
     float reach = t * t * 1.5 + t * 0.15;
     float w1 = sin(uTime * 1.05 + aPhase - t * 7.0);
     float w2 = cos(uTime * 0.71 + aPhase * 1.71 - t * 5.2);
@@ -197,8 +214,9 @@ const STRAND_VERT = /* glsl */ `
     p.z += cos(uTime * 1.18 + aPhase * 2.6 - t * 8.3) * flail * 0.6;
 
     // gather-and-release: mid-strand curls toward the axis as the gesture
-    // peaks, then flows back out through the release
-    float curl = kick * sin(t * 3.14159) * 0.42;
+    // peaks, then flows back out through the release; the wind-up pre-gathers
+    // the same curl inward — limbs tucking in before the strike
+    float curl = kick * sin(t * 3.14159) * 0.42 + uCharge * sin(t * 3.14159) * 0.15;
     p.x -= cos(aAngle) * curl;
     p.z -= sin(aAngle) * curl;
 
@@ -252,6 +270,7 @@ const STRAND_VERT = /* glsl */ `
 const STRAND_FRAG = /* glsl */ `
   uniform float uTime;
   uniform float uArm;
+  uniform float uCharge;
   uniform vec3 uColorTent;
   uniform vec3 uColorGlow;
   uniform float uGlowBoost;
@@ -260,9 +279,10 @@ const STRAND_FRAG = /* glsl */ `
   varying float vKick;
   varying vec2 vUv;
   void main() {
-    // bioluminescent shimmer traveling down the strand
+    // bioluminescent shimmer traveling down the strand — during the wind-up
+    // the filaments dim slightly, saving the flash for the stroke's kick
     float shimmer = 0.5 + 0.5 * sin(uTime * 2.6 + vPhase * 2.0 - vT * 9.0);
-    vec3 col = mix(uColorTent, uColorGlow, shimmer * 0.6 + uGlowBoost * 0.4);
+    vec3 col = mix(uColorTent, uColorGlow, (shimmer * 0.6 + uGlowBoost * 0.4) * (1.0 - uCharge * 0.2));
     // the gesture breathes light into the strand (re-zeroed above sustain)
     float gest = max(0.0, (vKick - 0.05) / 0.95);
     col += uColorGlow * gest * 0.4;
@@ -314,6 +334,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
       velLocal: { value: new THREE.Vector3() },
       glowBoost: { value: 0 },
       lagMat: { value: new THREE.Matrix3() },
+      charge: { value: 0 },
     }),
     []
   )
@@ -332,6 +353,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
         uPhase: shared.phase,
         uAmp: shared.amp,
         uGlowBoost: shared.glowBoost,
+        uCharge: shared.charge,
         uColorBell: { value: new THREE.Color(palette.bell) },
         uColorGlow: { value: new THREE.Color(palette.glow) },
         uColorOrgan: { value: new THREE.Color(palette.organ) },
@@ -353,6 +375,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
         uLagMat: shared.lagMat,
         uVelLocal: shared.velLocal,
         uGlowBoost: shared.glowBoost,
+        uCharge: shared.charge,
         uColorTent: { value: new THREE.Color(palette.tentacle) },
         uColorGlow: { value: new THREE.Color(palette.glow) },
       },
@@ -429,6 +452,8 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     m.uniforms.uLagMat = shared.lagMat
     m.uniforms.uVelLocal = shared.velLocal
     m.uniforms.uGlowBoost = shared.glowBoost
+    // clone() deep-copies uniforms — re-link so the wind-up drives the arms too
+    m.uniforms.uCharge = shared.charge
     return m
   }, [strandMaterial, shared])
 
