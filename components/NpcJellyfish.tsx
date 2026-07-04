@@ -65,7 +65,7 @@ function makeNpc(i: number): NpcState {
     pos,
     vel: new THREE.Vector3(),
     phaseOffset: rand(0, Math.PI * 2),
-    pulseHz: rand(0.8, 1.5),
+    pulseHz: rand(0.55, 1.05),
     scale: rand(0.45, 1.15),
     variant,
     angVel: rand(0.25, 0.6),
@@ -192,7 +192,7 @@ function Npc({ npc }: { npc: NpcState }) {
     const phase = time * Math.PI * 2 * npc.pulseHz + npc.phaseOffset
     body.uniforms.time.value = time + npc.phaseOffset
     body.uniforms.phase.value = phase
-    body.uniforms.amp.value = 0.05 + 0.16 * strokeEnvelope(phase)
+    body.uniforms.amp.value = 0.06 + 0.24 * strokeEnvelope(phase)
     s.invQuat.copy(group.quaternion).invert()
     s.velLocal.copy(npc.vel).applyQuaternion(s.invQuat).multiplyScalar(0.2)
     body.uniforms.velLocal.value.copy(s.velLocal)

@@ -19,12 +19,12 @@ import { terrainHeight } from "./Seafloor"
 // Propulsion is impulsive: almost all acceleration lands inside the short
 // power stroke (envelope attack), then drag bleeds it off — the speed curve
 // looks like an ADSR: snap up, exponential decay, coast, next pulse.
-const STROKE_ACCEL = 46
+const STROKE_ACCEL = 54
 const IDLE_ACCEL = 5
 const DRAG = 2.1
 const MAX_SPEED = 8
-const IDLE_PULSE_HZ = 0.9
-const SWIM_PULSE_HZ = 2.2
+const IDLE_PULSE_HZ = 0.7
+const SWIM_PULSE_HZ = 1.7
 
 interface Keys {
   f: boolean
@@ -209,8 +209,10 @@ export default function PlayerJellyfish() {
     // --- feed the body shaders (uniform writes only, zero allocations) ---
     body.uniforms.time.value = t
     body.uniforms.phase.value = phase
-    // bell snap follows the same stroke envelope as the thrust
-    body.uniforms.amp.value = 0.05 + (hasInput ? 0.3 : 0.16) * env
+    // bell snap follows the same stroke envelope as the thrust.
+    // with the asymmetric bellWave (×1.75 on the squeeze half) the mouth
+    // radius swings ~0.35x (nearly closed) to ~1.2x (soft overshoot)
+    body.uniforms.amp.value = 0.06 + (hasInput ? 0.32 : 0.2) * env
     s.invQuat.copy(group.quaternion).invert()
     s.velLocal.copy(ocean.playerVel).applyQuaternion(s.invQuat).multiplyScalar(0.16)
     body.uniforms.velLocal.value.copy(s.velLocal)

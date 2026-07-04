@@ -2,7 +2,7 @@
 
 import { useMemo, forwardRef, useImperativeHandle } from "react"
 import * as THREE from "three"
-import { GLSL_GESTURE } from "@/lib/ocean"
+import { GLSL_GESTURE, GLSL_BELLWAVE } from "@/lib/ocean"
 
 // ---------------------------------------------------------------------------
 // JellyBody — shared anatomy for the player and every NPC jellyfish.
@@ -67,19 +67,20 @@ const BELL_VERT = /* glsl */ `
   varying vec3 vNormal;
   varying vec3 vViewDir;
   varying vec3 vLocal;
+  ${GLSL_BELLWAVE}
   void main() {
     vec3 pos = position;
     // traveling contraction: apex (y=1) leads, rim (y<=0) follows.
-    // positive wave = radial squeeze + axial stretch (volume-conserving jet)
+    // asymmetric wave: deep squeeze (mouth nearly closes), soft overshoot
     float rimW = smoothstep(0.9, 0.0, position.y);
-    float wave = sin(uPhase - position.y * 2.8);
+    float wave = bellWave(uPhase - position.y * 2.8);
     float squeeze = 1.0 - uAmp * wave * rimW;
     pos.x *= squeeze;
     pos.z *= squeeze;
-    pos.y *= 1.0 + uAmp * 0.45 * wave * rimW;
-    // gentle rim ruffle
+    pos.y *= 1.0 + uAmp * 0.4 * wave * rimW;
+    // gentle rim ruffle, unhurried
     float ang = atan(position.z, position.x);
-    pos.xz += normalize(position.xz + vec2(1e-4)) * 0.02 * sin(ang * 14.0 + uTime * 2.3) * rimW;
+    pos.xz += normalize(position.xz + vec2(1e-4)) * 0.03 * sin(ang * 14.0 + uTime * 1.6) * rimW;
 
     vLocal = position;
     vNormal = normalize(normalMatrix * normal);
@@ -132,6 +133,7 @@ const STRAND_VERT = /* glsl */ `
   varying float vPhase;
   varying float vKick;
   ${GLSL_GESTURE}
+  ${GLSL_BELLWAVE}
   void main() {
     float t = -position.y; // 0 at bell attachment, 1 at tip
     vT = t;
@@ -150,8 +152,8 @@ const STRAND_VERT = /* glsl */ `
     p.z = position.z * aThick * taper;
     p.y = position.y * aLen;
 
-    // gentle extension as the gesture builds
-    p.y *= 1.0 + 0.10 * kick;
+    // extension as the gesture builds — a touch more expressive
+    p.y *= 1.0 + 0.14 * kick;
 
     // whip-like sway: waves PROPAGATE base → tip (negative t phase) and,
     // like a real free-hanging strand, amplitude GROWS toward the tip —
@@ -173,19 +175,27 @@ const STRAND_VERT = /* glsl */ `
 
     // gather-and-release: mid-strand curls toward the axis as the gesture
     // peaks, then flows back out through the release
-    float curl = kick * sin(t * 3.14159) * 0.34;
+    float curl = kick * sin(t * 3.14159) * 0.42;
     p.x -= cos(aAngle) * curl;
     p.z -= sin(aAngle) * curl;
 
-    // hydrodynamic drag: strands trail opposite to motion, more at the tip
-    p -= uVelLocal * (t * t) * 1.1;
+    // loose anchor: the root ANGLE deflects easily — slow waves tilt the
+    // whole strand axis linearly from the anchor point
+    float tiltX = sin(uTime * 0.55 + aPhase * 1.9) * 0.20 + cos(uTime * 0.34 + aPhase) * 0.12;
+    float tiltZ = cos(uTime * 0.47 + aPhase * 1.6) * 0.20 + sin(uTime * 0.29 + aPhase * 2.2) * 0.12;
+    p.x += tiltX * t;
+    p.z += tiltZ * t;
+
+    // hydrodynamic drag: linear term leans the root, quadratic drags the tip
+    p -= uVelLocal * (t * 0.5 + t * t * 1.1);
 
     // attach to bell rim — the attachment ring breathes with the EXACT
-    // contraction the bell rim shader applies (1 - uAmp·sin(uPulse) at the
-    // rim), so bell and tentacle roots stay physically welded. The radius
-    // change then travels down the strand with lag and fading influence.
-    float rimWave = sin(uPulse - t * 3.5);
-    float rimFollow = 1.0 - uAmp * rimWave * (1.0 - t * 0.8);
+    // asymmetric contraction the bell rim shader applies (same bellWave),
+    // so bell and tentacle roots stay physically welded. The falloff runs
+    // PAST zero (1 - 1.3t): the tips counter-swing against the mouth,
+    // a subtle whip-lash as the funnel closes.
+    float rimWave = bellWave(uPulse - t * 3.5);
+    float rimFollow = 1.0 - uAmp * rimWave * (1.0 - t * 1.3);
     p.x += cos(aAngle) * aRadius * rimFollow;
     p.z += sin(aAngle) * aRadius * rimFollow;
     p.y += 0.02;

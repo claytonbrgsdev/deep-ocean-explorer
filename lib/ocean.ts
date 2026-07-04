@@ -202,6 +202,17 @@ export const GLSL_STROKE = /* glsl */ `
   }
 `
 
+// Asymmetric bell-mouth wave, shared by the bell rim AND the tentacle
+// attachment ring so they stay welded. Contraction (positive half) digs much
+// deeper than the expansion overshoots: the mouth nearly closes, then relaxes
+// slightly past rest — like a real medusa's feeding pulse.
+export const GLSL_BELLWAVE = /* glsl */ `
+  float bellWave(float x) {
+    float w = sin(x);
+    return w * mix(0.55, 1.75, smoothstep(-0.35, 0.35, w));
+  }
+`
+
 // Gesture envelope for the tentacles — deliberately NOT the thrust envelope.
 // The body snaps (physics), the limbs *gesture*: slow attack (~30% of the
 // cycle), long decay reaching the 5% sustain floor at ~75%, and a release
