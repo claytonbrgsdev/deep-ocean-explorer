@@ -1,10 +1,11 @@
 "use client"
 
-import { useRef, useEffect, useMemo } from "react"
+import { useRef, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
 import * as THREE from "three"
-import JellyBody, { JellyBodyHandle, JELLY_VARIANTS } from "./JellyBody"
+import JellyBody, { JellyBodyHandle } from "./JellyBody"
 import { ocean, WORLD, strokeEnvelope } from "@/lib/ocean"
+import { character, subscribeCharacter } from "@/lib/species"
 import { terrainHeight } from "./Seafloor"
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,14 @@ export default function PlayerJellyfish() {
   const bodyRef = useRef<JellyBodyHandle>(null)
   const lightRef = useRef<THREE.PointLight>(null)
   const { camera, gl } = useThree()
+
+  // re-render when the Jelly Lab edits the character (anatomy/palette)
+  useSyncExternalStore(
+    subscribeCharacter,
+    () => character.version,
+    () => 0
+  )
+  const cfg = character.config
 
   const keys = useRef<Keys>({ f: false, b: false, l: false, r: false, u: false, d: false })
   const orbit = useRef({ yaw: 0, pitch: 0.25, dist: 9, dragging: false, lastX: 0, lastY: 0 })
@@ -169,16 +178,19 @@ export default function PlayerJellyfish() {
     if (hasInput) s.dir.normalize()
 
     // --- pulse-synchronized propulsion (ADSR stroke envelope) ---
-    const targetHz = hasInput ? SWIM_PULSE_HZ : IDLE_PULSE_HZ
+    const targetHz = (hasInput ? SWIM_PULSE_HZ : IDLE_PULSE_HZ) * character.config.pulseMult
     pulse.current.phase += delta * Math.PI * 2 * targetHz
     const phase = pulse.current.phase
     const env = strokeEnvelope(phase)
 
     // thrust fires along the bell axis — the jelly pushes water out of its
-    // own bell, so steering only re-aims the body; the jet does the rest
+    // own bell, so steering only re-aims the body; the jet does the rest.
+    // character stats scale the whole drivetrain
+    const st = character.config.stats
+    const speedMult = 0.7 + st.speed * 0.7
     s.fwd.set(0, 1, 0).applyQuaternion(group.quaternion)
     if (hasInput) {
-      ocean.playerVel.addScaledVector(s.fwd, STROKE_ACCEL * env * delta)
+      ocean.playerVel.addScaledVector(s.fwd, STROKE_ACCEL * speedMult * env * delta)
     } else {
       // gentle idle pulses keep it breathing and slowly drifting
       ocean.playerVel.addScaledVector(s.fwd, IDLE_ACCEL * env * delta)
@@ -205,7 +217,8 @@ export default function PlayerJellyfish() {
     // also breaks the sink→orient-down→pulse-down feedback spiral.
     if (hasInput) {
       s.quat.setFromUnitVectors(s.up, s.dir)
-      group.quaternion.slerp(s.quat, 1 - Math.exp(-3.0 * delta))
+      const agility = 0.65 + st.agility * 0.85
+      group.quaternion.slerp(s.quat, 1 - Math.exp(-3.0 * agility * delta))
     } else {
       s.quat.identity()
       group.quaternion.slerp(s.quat, 1 - Math.exp(-1.2 * delta))
@@ -231,7 +244,9 @@ export default function PlayerJellyfish() {
     body.uniforms.glowBoost.value = 0.2 + 0.3 * Math.min(1, speed / MAX_SPEED) + 0.35 * env
 
     if (lightRef.current) {
-      lightRef.current.intensity = 2.0 + env * 3.2
+      // glow stat: brighter lantern, longer reach into the dark
+      lightRef.current.intensity = (2.0 + env * 3.2) * (0.7 + st.glow * 0.7)
+      lightRef.current.distance = 10 + st.glow * 14
     }
 
     // --- store telemetry for HUD / environment systems ---
@@ -277,9 +292,20 @@ export default function PlayerJellyfish() {
   })
 
   return (
-    <group ref={groupRef} position={[0, -20, 0]}>
-      <JellyBody ref={bodyRef} palette={JELLY_VARIANTS[0]} tentacles={30} oralArms={4} seed={7} />
-      <pointLight ref={lightRef} color="#8fd8ff" distance={16} decay={1.8} intensity={2.5} />
+    <group ref={groupRef} position={[0, -20, 0]} scale={cfg.scale}>
+      <JellyBody
+        ref={bodyRef}
+        palette={cfg.palette}
+        tentacles={cfg.tentacles}
+        oralArms={cfg.oralArms}
+        seed={7}
+        bellWidth={cfg.bellWidth}
+        bellHeight={cfg.bellHeight}
+        tentacleLen={cfg.tentacleLen}
+        tipGlow={cfg.tipGlow}
+        aura={cfg.aura}
+      />
+      <pointLight ref={lightRef} color={cfg.palette.glow} distance={16} decay={1.8} intensity={2.5} />
     </group>
   )
 }

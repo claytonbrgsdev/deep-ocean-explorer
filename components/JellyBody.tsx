@@ -45,21 +45,22 @@ export interface JellyBodyHandle {
 }
 
 // Bell profile: hemisphere flowing into a soft inward lip.
-function makeBellGeometry(): THREE.LatheGeometry {
+// width/height are character-maker multipliers around 1.
+function makeBellGeometry(width = 1, height = 1): THREE.LatheGeometry {
   const pts: THREE.Vector2[] = []
   const N = 22
   for (let i = 0; i <= N; i++) {
     const t = i / N
     const theta = (t * Math.PI) / 2
     // superellipse-ish rounding for a fuller, more medusa-like dome
-    const r = Math.pow(Math.sin(theta), 0.85)
-    const y = Math.pow(Math.cos(theta), 1.15)
+    const r = Math.pow(Math.sin(theta), 0.85) * width
+    const y = Math.pow(Math.cos(theta), 1.15) * height
     pts.push(new THREE.Vector2(r, y))
   }
   // rim lip curving slightly inward/under
-  pts.push(new THREE.Vector2(1.0, -0.05))
-  pts.push(new THREE.Vector2(0.93, -0.1))
-  pts.push(new THREE.Vector2(0.85, -0.07))
+  pts.push(new THREE.Vector2(1.0 * width, -0.05 * height))
+  pts.push(new THREE.Vector2(0.93 * width, -0.1 * height))
+  pts.push(new THREE.Vector2(0.85 * width, -0.07 * height))
   return new THREE.LatheGeometry(pts, 48)
 }
 
@@ -145,6 +146,7 @@ const STRAND_VERT = /* glsl */ `
   uniform float uArm;
   uniform mat3 uLagMat;
   uniform vec3 uVelLocal;
+  uniform float uTipOrb;
   attribute float aAngle;
   attribute float aRadius;
   attribute float aLen;
@@ -170,7 +172,8 @@ const STRAND_VERT = /* glsl */ `
     vKick = kick;
 
     vec3 p;
-    float taper = 1.0 - t * 0.72;
+    // tip-glow trait: the last stretch swells into a luminous bulb
+    float taper = 1.0 - t * 0.72 + uTipOrb * smoothstep(0.86, 1.0, t) * 2.6;
     p.x = position.x * aThick * taper;
     p.z = position.z * aThick * taper;
     p.y = position.y * aLen;
@@ -252,6 +255,7 @@ const STRAND_VERT = /* glsl */ `
 const STRAND_FRAG = /* glsl */ `
   uniform float uTime;
   uniform float uArm;
+  uniform float uTipOrb;
   uniform vec3 uColorTent;
   uniform vec3 uColorGlow;
   uniform float uGlowBoost;
@@ -281,6 +285,12 @@ const STRAND_FRAG = /* glsl */ `
 
     col = mix(col, armCol, uArm);
     float a = mix(alpha, armAlpha, uArm);
+
+    // tip-glow trait: the bulb burns like a lantern, breathing slowly
+    float bead = smoothstep(0.86, 0.97, vT) * uTipOrb * (1.0 - uArm);
+    col += uColorGlow * bead * (1.1 + 0.7 * sin(uTime * 1.8 + vPhase * 3.0));
+    a += bead * 0.55;
+
     gl_FragColor = vec4(col, a);
   }
 `
@@ -290,6 +300,14 @@ interface JellyBodyProps {
   tentacles?: number
   oralArms?: number
   seed?: number
+  /** character-maker anatomy dials (multipliers around 1) */
+  bellWidth?: number
+  bellHeight?: number
+  tentacleLen?: number
+  /** 0..1 — luminous bulbs at the tentacle tips */
+  tipGlow?: number
+  /** orbiting plankton mote ring */
+  aura?: boolean
 }
 
 function seededRand(seed: number) {
@@ -301,10 +319,10 @@ function seededRand(seed: number) {
 }
 
 const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody(
-  { palette, tentacles = 28, oralArms = 4, seed = 1 },
+  { palette, tentacles = 28, oralArms = 4, seed = 1, bellWidth = 1, bellHeight = 1, tentacleLen = 1, tipGlow = 0, aura = false },
   ref
 ) {
-  const bellGeometry = useMemo(makeBellGeometry, [])
+  const bellGeometry = useMemo(() => makeBellGeometry(bellWidth, bellHeight), [bellWidth, bellHeight])
 
   const shared = useMemo<JellyUniforms>(
     () => ({
@@ -350,6 +368,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
         uPulse: shared.phase,
         uAmp: shared.amp,
         uArm: { value: 0 },
+        uTipOrb: { value: tipGlow },
         uLagMat: shared.lagMat,
         uVelLocal: shared.velLocal,
         uGlowBoost: shared.glowBoost,
@@ -357,7 +376,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
         uColorGlow: { value: new THREE.Color(palette.glow) },
       },
     })
-  }, [palette, shared])
+  }, [palette, shared, tipGlow])
 
   // thin trailing tentacles
   const tentacleGeometry = useMemo(() => {
@@ -377,7 +396,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
       angle[i] = (i / tentacles) * Math.PI * 2 + rand() * 0.2
       radius[i] = 0.82 + rand() * 0.12
       // longer strands: the bigger wave amplitude eats projected length
-      len[i] = 3.4 + rand() * 3.0
+      len[i] = (3.4 + rand() * 3.0) * tentacleLen
       phase[i] = rand() * Math.PI * 2
       thick[i] = 0.014 + rand() * 0.016
     }
@@ -388,7 +407,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     inst.setAttribute("aThick", new THREE.InstancedBufferAttribute(thick, 1))
     inst.instanceCount = tentacles
     return inst
-  }, [tentacles, seed])
+  }, [tentacles, seed, tentacleLen])
 
   // wide frilly oral arms under the dome — fleshy ruffled curtains
   const armGeometry = useMemo(() => {
@@ -426,6 +445,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     m.uniforms.uPulse = shared.phase
     m.uniforms.uAmp = shared.amp
     m.uniforms.uArm.value = 1
+    m.uniforms.uTipOrb.value = 0 // arms never grow bulbs
     m.uniforms.uLagMat = shared.lagMat
     m.uniforms.uVelLocal = shared.velLocal
     m.uniforms.uGlowBoost = shared.glowBoost
@@ -444,6 +464,66 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     [palette]
   )
 
+  // aura trait: a veil of plankton motes orbiting the bell on tilted shells
+  const auraGeometry = useMemo(() => {
+    if (!aura) return null
+    const N = 72
+    const geo = new THREE.BufferGeometry()
+    const pos = new Float32Array(N * 3)
+    const seedAttr = new Float32Array(N)
+    const rnd = seededRand(seed * 31 + 5)
+    for (let i = 0; i < N; i++) {
+      const r = 1.5 + rnd() * 1.1
+      const a = rnd() * Math.PI * 2
+      const y = (rnd() - 0.35) * 1.6
+      pos[i * 3] = Math.cos(a) * r
+      pos[i * 3 + 1] = y
+      pos[i * 3 + 2] = Math.sin(a) * r
+      seedAttr[i] = rnd() * Math.PI * 2
+    }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute("aSeed", new THREE.BufferAttribute(seedAttr, 1))
+    return geo
+  }, [aura, seed])
+
+  const auraMaterial = useMemo(() => {
+    if (!aura) return null
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uTime: shared.time,
+        uColor: { value: new THREE.Color(palette.glow) },
+      },
+      vertexShader: /* glsl */ `
+        uniform float uTime;
+        attribute float aSeed;
+        varying float vBlink;
+        void main() {
+          vec3 p = position;
+          float a = uTime * (0.25 + fract(aSeed) * 0.2) + aSeed;
+          float ca = cos(a); float sa = sin(a);
+          p.xz = mat2(ca, -sa, sa, ca) * p.xz;
+          p.y += sin(uTime * 0.7 + aSeed * 3.0) * 0.25;
+          vBlink = 0.4 + 0.6 * pow(0.5 + 0.5 * sin(uTime * 1.3 + aSeed * 5.0), 2.0);
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = 26.0 / max(-mv.z, 1.0);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor;
+        varying float vBlink;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          float a = smoothstep(0.5, 0.05, d) * vBlink * 0.7;
+          gl_FragColor = vec4(uColor * 1.5 * a, a);
+        }
+      `,
+    })
+  }, [aura, palette, shared])
+
   return (
     <group>
       <mesh geometry={bellGeometry} material={bellMaterial} />
@@ -460,6 +540,9 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
           )
         })}
       </group>
+      {aura && auraGeometry && auraMaterial && (
+        <points geometry={auraGeometry} material={auraMaterial} frustumCulled={false} />
+      )}
     </group>
   )
 })

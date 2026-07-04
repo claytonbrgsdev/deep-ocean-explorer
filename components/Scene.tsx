@@ -7,6 +7,7 @@ import FishSchools from "./FishSchools"
 import Seafloor from "./Seafloor"
 import AbyssalForest from "./AbyssalForest"
 import HUD from "./HUD"
+import CharacterMaker from "./CharacterMaker"
 import {
   DepthLighting,
   OceanBackground,
@@ -22,6 +23,7 @@ export default function Scene() {
   return (
     <>
       <HUD />
+      <CharacterMaker />
       <Canvas
         dpr={[1, 1.75]}
         camera={{ position: [0, -18, 10], fov: 60, near: 0.1, far: 600 }}

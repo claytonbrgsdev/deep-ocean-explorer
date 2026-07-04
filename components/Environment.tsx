@@ -4,6 +4,7 @@ import { useRef, useMemo } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
 import * as THREE from "three"
 import { ocean, ZONES, zoneIndexAtDepth, WORLD, GLSL_NOISE } from "@/lib/ocean"
+import { character } from "@/lib/species"
 
 // ---------------------------------------------------------------------------
 // Atmosphere stack. Every effect is a hand-written ShaderMaterial (no
@@ -48,7 +49,9 @@ export function DepthLighting() {
     cur.ambientIntensity += (zone.ambientIntensity - cur.ambientIntensity) * k
     cur.sunIntensity += (zone.sunIntensity - cur.sunIntensity) * k
     cur.fogNear += (zone.fogNear - cur.fogNear) * k
-    cur.fogFar += (zone.fogFar - cur.fogFar) * k
+    // glow stat: a brighter jelly literally sees farther in the dark
+    const glowPush = character.config.stats.glow * 16 * THREE.MathUtils.clamp((ocean.depth - 42) / 28, 0, 1)
+    cur.fogFar += (zone.fogFar + glowPush - cur.fogFar) * k
     cur.light += (zone.light - cur.light) * k
 
     if (ambientRef.current) {
