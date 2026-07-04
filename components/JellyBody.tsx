@@ -152,15 +152,23 @@ const STRAND_VERT = /* glsl */ `
     // gentle extension as the gesture builds
     p.y *= 1.0 + 0.10 * kick;
 
-    // languid sway — three slow incommensurate waves, reach grows toward
-    // the tip quadratically so the strand curves instead of hinging
-    float swayAmp = 1.0 - 0.35 * kick;
-    float reach = (t * t * 0.85 + t * 0.25);
-    float w1 = sin(uTime * 1.05 + aPhase + t * 4.0);
-    float w2 = cos(uTime * 0.71 + aPhase * 1.71 + t * 2.8);
-    float w3 = sin(uTime * 0.43 + aPhase * 2.3 + t * 1.6);
+    // whip-like sway: waves PROPAGATE base → tip (negative t phase) and,
+    // like a real free-hanging strand, amplitude GROWS toward the tip —
+    // the energy meets less mass, not more resistance. Higher spatial
+    // frequency gives multiple S-curves along the strand (articulation).
+    float swayAmp = 1.0 - 0.25 * kick;
+    float reach = t * t * 1.5 + t * 0.15;
+    float w1 = sin(uTime * 1.05 + aPhase - t * 7.0);
+    float w2 = cos(uTime * 0.71 + aPhase * 1.71 - t * 5.2);
+    float w3 = sin(uTime * 0.43 + aPhase * 2.3 - t * 3.0);
     p.x += (w1 * 0.42 + w3 * 0.34) * reach * swayAmp;
     p.z += (w2 * 0.42 + w3 * 0.26) * reach * swayAmp;
+
+    // free-end flail: a faster wave that only the last third really feels,
+    // energized by the gesture as it arrives at the tip
+    float flail = t * t * t * (0.5 + 0.9 * kick);
+    p.x += sin(uTime * 1.35 + aPhase * 3.1 - t * 9.5) * flail * 0.8;
+    p.z += cos(uTime * 1.18 + aPhase * 2.6 - t * 8.3) * flail * 0.6;
 
     // gather-and-release: mid-strand curls toward the axis as the gesture
     // peaks, then flows back out through the release
@@ -273,7 +281,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
 
   // thin trailing tentacles
   const tentacleGeometry = useMemo(() => {
-    const geo = new THREE.CylinderGeometry(1, 0.45, 1, 5, 20, true)
+    const geo = new THREE.CylinderGeometry(1, 0.45, 1, 5, 30, true)
     geo.translate(0, -0.5, 0)
     const inst = new THREE.InstancedBufferGeometry()
     inst.index = geo.index
@@ -287,7 +295,8 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     for (let i = 0; i < tentacles; i++) {
       angle[i] = (i / tentacles) * Math.PI * 2 + rand() * 0.2
       radius[i] = 0.82 + rand() * 0.12
-      len[i] = 2.6 + rand() * 2.4
+      // longer strands: the bigger wave amplitude eats projected length
+      len[i] = 3.4 + rand() * 3.0
       phase[i] = rand() * Math.PI * 2
       thick[i] = 0.014 + rand() * 0.016
     }
@@ -316,7 +325,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     for (let i = 0; i < oralArms; i++) {
       angle[i] = (i / oralArms) * Math.PI * 2 + 0.4
       radius[i] = 0.18 + rand() * 0.08
-      len[i] = 2.0 + rand() * 1.0
+      len[i] = 2.5 + rand() * 1.2
       phase[i] = rand() * Math.PI * 2
       thick[i] = 1.0 // plane already has width; thickness scales x/z
     }

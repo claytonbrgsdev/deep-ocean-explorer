@@ -195,14 +195,12 @@ export default function PlayerJellyfish() {
     ocean.playerPos.z = THREE.MathUtils.clamp(ocean.playerPos.z, -WORLD.bounds, WORLD.bounds)
     group.position.copy(ocean.playerPos)
 
-    // --- orientation: steer the bell toward the input; the jet does the rest ---
+    // --- orientation: steer the bell toward the input; the jet does the rest.
+    // No input → righting reflex: real jellyfish re-orient bell-up, which
+    // also breaks the sink→orient-down→pulse-down feedback spiral.
     if (hasInput) {
       s.quat.setFromUnitVectors(s.up, s.dir)
       group.quaternion.slerp(s.quat, 1 - Math.exp(-3.0 * delta))
-    } else if (speed > 0.6) {
-      s.dir.copy(ocean.playerVel).normalize()
-      s.quat.setFromUnitVectors(s.up, s.dir)
-      group.quaternion.slerp(s.quat, 1 - Math.exp(-1.5 * delta))
     } else {
       s.quat.identity()
       group.quaternion.slerp(s.quat, 1 - Math.exp(-1.2 * delta))
