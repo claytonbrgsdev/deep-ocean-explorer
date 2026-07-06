@@ -169,6 +169,23 @@ export function fbm2(x: number, y: number, octaves = 4): number {
 }
 
 // ---------------------------------------------------------------------------
+// Ocean current — a slow horizontal flow field. Strongest near the surface
+// (wind-driven), fading toward the still abyss. Curl-free noise is fine here:
+// jellyfish are plankton, they ride whatever the water does.
+// ---------------------------------------------------------------------------
+
+export function oceanCurrent(pos: THREE.Vector3, time: number, out: THREE.Vector3): THREE.Vector3 {
+  const depth = -pos.y
+  // surface ~0.55 m/s → abyss ~0.06 m/s
+  const strength = 0.06 + 0.49 * Math.exp(-depth / 38)
+  const nx = valueNoise2(pos.x * 0.02 + time * 0.015, pos.z * 0.02) - 0.5
+  const nz = valueNoise2(pos.z * 0.02 - time * 0.012, pos.x * 0.02 + 31.7) - 0.5
+  // a steady prevailing drift + the local swirl
+  out.set(nx * 2 + 0.35, 0, nz * 2 + 0.12).multiplyScalar(strength)
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // Propulsion stroke envelope — ADSR-like curve over one pulse cycle.
 // Attack: bell snaps shut (fast rise). Decay: jet tapers off exponentially.
 // Sustain: ~0 (jellyfish coast between pulses). Release: hydrodynamic drag

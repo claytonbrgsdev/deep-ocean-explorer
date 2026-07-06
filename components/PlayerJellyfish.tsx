@@ -4,8 +4,9 @@ import { useRef, useEffect, useMemo, useSyncExternalStore } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
 import * as THREE from "three"
 import JellyBody, { JellyBodyHandle } from "./JellyBody"
-import { ocean, WORLD, strokeEnvelope } from "@/lib/ocean"
+import { ocean, WORLD, strokeEnvelope, oceanCurrent } from "@/lib/ocean"
 import { character, subscribeCharacter } from "@/lib/species"
+import { game } from "@/lib/game"
 import { terrainHeight } from "./Seafloor"
 
 // ---------------------------------------------------------------------------
@@ -24,7 +25,14 @@ const STROKE_ACCEL = 54
 // idle pulses nearly balance the coasting sink: the jelly hovers with a
 // slow pulse-rise / coast-sink breathing instead of ballooning to the top
 const IDLE_ACCEL = 2.4
-const DRAG = 2.1
+// drag is anisotropic: a medusa is streamlined along its bell axis and a
+// blunt parachute sideways — it coasts far where it aims, and any lateral
+// slip dies fast. This is what makes the glide feel "aimed".
+const DRAG_AXIAL = 1.7
+const DRAG_LATERAL = 3.1
+// bell refill after the power stroke sucks a little water back in — a small
+// reverse impulse during the expansion window (Costello's "stopping vortex")
+const REFILL_SUCTION = 0.07
 const MAX_SPEED = 8
 const IDLE_PULSE_HZ = 0.7
 const SWIM_PULSE_HZ = 1.7
@@ -71,6 +79,8 @@ export default function PlayerJellyfish() {
       m4: new THREE.Matrix4(),
       up: new THREE.Vector3(0, 1, 0),
       velLocal: new THREE.Vector3(),
+      flow: new THREE.Vector3(),
+      lateral: new THREE.Vector3(),
     }),
     []
   )
@@ -175,10 +185,17 @@ export default function PlayerJellyfish() {
     if (k.u) s.dir.y += 1
     if (k.d) s.dir.y -= 1
     const hasInput = s.dir.lengthSq() > 0
-    if (hasInput) s.dir.normalize()
+    if (hasInput) {
+      s.dir.normalize()
+      game.started = true
+    }
 
     // --- pulse-synchronized propulsion (ADSR stroke envelope) ---
-    const targetHz = (hasInput ? SWIM_PULSE_HZ : IDLE_PULSE_HZ) * character.config.pulseMult
+    // hunger slows the metronome: below ~30% energy the pulse loses vigor,
+    // never below 55% — tired, not stranded. Plankton restores it.
+    const energyFrac = game.energy / 100
+    const vigor = energyFrac > 0.3 ? 1 : 0.55 + 1.5 * energyFrac
+    const targetHz = (hasInput ? SWIM_PULSE_HZ : IDLE_PULSE_HZ) * character.config.pulseMult * vigor
     pulse.current.phase += delta * Math.PI * 2 * targetHz
     const phase = pulse.current.phase
     const env = strokeEnvelope(phase)
@@ -187,7 +204,7 @@ export default function PlayerJellyfish() {
     // own bell, so steering only re-aims the body; the jet does the rest.
     // character stats scale the whole drivetrain
     const st = character.config.stats
-    const speedMult = 0.7 + st.speed * 0.7
+    const speedMult = (0.7 + st.speed * 0.7) * vigor
     s.fwd.set(0, 1, 0).applyQuaternion(group.quaternion)
     if (hasInput) {
       ocean.playerVel.addScaledVector(s.fwd, STROKE_ACCEL * speedMult * env * delta)
@@ -195,16 +212,33 @@ export default function PlayerJellyfish() {
       // gentle idle pulses keep it breathing and slowly drifting
       ocean.playerVel.addScaledVector(s.fwd, IDLE_ACCEL * env * delta)
     }
+    // bell refill: a soft backward tug in the expansion window (~45–80% of
+    // the cycle) — the surge breathes instead of feeling like a rocket
+    const cyc = phase / (Math.PI * 2) - Math.floor(phase / (Math.PI * 2))
+    if (cyc > 0.45 && cyc < 0.8 && hasInput) {
+      const refill = Math.sin(((cyc - 0.45) / 0.35) * Math.PI)
+      ocean.playerVel.addScaledVector(s.fwd, -STROKE_ACCEL * REFILL_SUCTION * refill * delta)
+    }
     // buoyancy bob + slow sink while coasting (real jellies pulse-and-sink)
     ocean.playerVel.y += Math.sin(t * 0.6) * 0.15 * delta
     if (!hasInput) ocean.playerVel.y -= 0.5 * (1 - env) * delta
 
-    // drag + speed clamp
-    ocean.playerVel.multiplyScalar(Math.max(0, 1 - DRAG * delta))
+    // anisotropic drag: split velocity into along-bell and lateral parts
+    const axialSpeed = ocean.playerVel.dot(s.fwd)
+    s.lateral.copy(ocean.playerVel).addScaledVector(s.fwd, -axialSpeed)
+    const axialKeep = Math.max(0, 1 - DRAG_AXIAL * delta)
+    const lateralKeep = Math.max(0, 1 - DRAG_LATERAL * delta)
+    ocean.playerVel
+      .copy(s.lateral.multiplyScalar(lateralKeep))
+      .addScaledVector(s.fwd, axialSpeed * axialKeep)
     const speed = ocean.playerVel.length()
     if (speed > MAX_SPEED) ocean.playerVel.multiplyScalar(MAX_SPEED / speed)
 
-    // integrate + bounds (never sink into the terrain relief)
+    // integrate + bounds (never sink into the terrain relief).
+    // The current moves the water itself — it displaces the body without
+    // fighting the drag model, so you feel it strongest while coasting.
+    oceanCurrent(ocean.playerPos, t, s.flow)
+    ocean.playerPos.addScaledVector(s.flow, delta)
     ocean.playerPos.addScaledVector(ocean.playerVel, delta)
     const seabed = terrainHeight(ocean.playerPos.x, ocean.playerPos.z)
     ocean.playerPos.y = THREE.MathUtils.clamp(ocean.playerPos.y, seabed + 2.5, -1.2)
@@ -304,6 +338,14 @@ export default function PlayerJellyfish() {
         tentacleLen={cfg.tentacleLen}
         tipGlow={cfg.tipGlow}
         aura={cfg.aura}
+        bellOpacity={cfg.bellOpacity}
+        bellShape={cfg.bellShape}
+        fireworks={cfg.fireworks}
+        canalColor={cfg.canalColor}
+        spots={cfg.spots}
+        pedalia={cfg.pedalia}
+        oralArmScale={cfg.oralArmScale}
+        mane={cfg.mane}
       />
       <pointLight ref={lightRef} color={cfg.palette.glow} distance={16} decay={1.8} intensity={2.5} />
     </group>

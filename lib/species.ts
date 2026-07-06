@@ -29,6 +29,16 @@ export interface JellyConfig {
   /** traits */
   tipGlow: number // 0..1 — luminous beads at tentacle tips
   aura: boolean // orbiting plankton mote ring
+  /** ------- extended anatomy (optional; defaults preserve the original 6) -------
+   * These unlock the real-species silhouettes without disturbing the physics. */
+  bellOpacity?: number // 0 = the natural translucent glass; 1 = a solid, milky bell
+  bellShape?: "dome" | "box" // cuboid bell for cubozoans (Chirodectes)
+  fireworks?: number // 0..1 — radiating gastrovascular "firework" canals (Halitrephes)
+  canalColor?: string // colour of the firework canals; falls back to `organ`
+  spots?: number // 0..1 — maculate dark spotting on the bell (Chirodectes)
+  pedalia?: number // >0 gathers tentacles into N corner/lobe bundles (box=4, mane=8)
+  oralArmScale?: number // ribbon oral-arm size multiplier (Stygiomedusa giant arms)
+  mane?: number // 0..1 — finer, denser, longer "lion's mane" tentacle curtain (Cyanea)
   /** swim stats, 0..1 — applied by PlayerJellyfish/DepthLighting */
   stats: { speed: number; agility: number; glow: number }
 }
@@ -63,6 +73,13 @@ const make = (
     pulseMult: 1,
     tipGlow: 0,
     aura: false,
+    bellOpacity: 0,
+    bellShape: "dome",
+    fireworks: 0,
+    spots: 0,
+    pedalia: 0,
+    oralArmScale: 1,
+    mane: 0,
     ...over,
     stats,
   },
@@ -116,6 +133,87 @@ export const SPECIES: JellySpecies[] = [
     { bell: "#3a1030", glow: "#ff2f6b", organ: "#ff3b3b", tentacle: "#ff6b8f" },
     { aura: true, tipGlow: 0.6, scale: 1.1, tentacles: 32, pulseMult: 0.85, bellWidth: 1.1 },
     { speed: 0.5, agility: 0.5, glow: 1 }
+  ),
+  // ---- real deep-sea species -------------------------------------------------
+  make(
+    "halitrephes",
+    "FIREWORKS",
+    "Halitrephes maasi — a firework frozen inside clear glass",
+    { bell: "#dfeefe", glow: "#ffd21a", organ: "#ff6a1a", tentacle: "#ffd9a0" },
+    {
+      // shallow saucer disc; ~27 radial canals blaze under direct light only
+      fireworks: 1,
+      canalColor: "#ffcc2a",
+      bellWidth: 1.32,
+      bellHeight: 0.56,
+      tentacles: 46, // fine, even single series around the whole rim
+      tentacleLen: 1.05,
+      oralArms: 2, // no frilly arms — just a central manubrium
+      tipGlow: 0.15,
+      scale: 0.95,
+      pulseMult: 1.0,
+    },
+    { speed: 0.55, agility: 0.65, glow: 0.85 }
+  ),
+  make(
+    "cyanea",
+    "LION'S MANE",
+    "Cyanea capillata — a russet parachute trailing a mane of a thousand threads",
+    { bell: "#c15a34", glow: "#ff9a4d", organ: "#7a2e5a", tentacle: "#d99a48" },
+    {
+      // lobed reddish dome; 8 dense tentacle clusters; thick frilly oral arms
+      bellOpacity: 0.32, // adult bell is milky, not glassy
+      pedalia: 8,
+      mane: 1,
+      tentacles: 120, // instanced — reads as the flowing mane
+      tentacleLen: 1.6,
+      oralArms: 4,
+      scale: 1.4,
+      bellWidth: 1.3,
+      bellHeight: 0.62,
+      pulseMult: 0.75,
+    },
+    { speed: 0.4, agility: 0.35, glow: 0.45 }
+  ),
+  make(
+    "chirodectes",
+    "BOX",
+    "Chirodectes maculatus — a spotted cube with a glowing red heart",
+    { bell: "#cfeeff", glow: "#5fe0ff", organ: "#ff4a2a", tentacle: "#ffc9d6" },
+    {
+      // cuboid bell, dark maculae, 4 corner tentacle bundles, active swimmer
+      bellOpacity: 0.34, // firm, somewhat opaque cube
+      bellShape: "box",
+      pedalia: 4,
+      spots: 1,
+      tentacles: 28, // ~7 per corner
+      tentacleLen: 1.15,
+      oralArms: 3,
+      bellWidth: 1.0,
+      bellHeight: 1.0,
+      scale: 0.95,
+      pulseMult: 1.15,
+    },
+    { speed: 0.75, agility: 0.9, glow: 0.55 }
+  ),
+  make(
+    "stygiomedusa",
+    "PHANTOM",
+    "Stygiomedusa gigantea — a crimson cloak drifting the abyss on four vast ribbons",
+    { bell: "#4a191c", glow: "#a83030", organ: "#c0392b", tentacle: "#6e1d1d" },
+    {
+      // smooth low canopy, NO marginal tentacles, 4 immense ribbon oral arms
+      bellOpacity: 0.45, // thick muscular crimson canopy
+      oralArms: 4,
+      oralArmScale: 2.8,
+      tentacles: 6, // vestigial — kept minimal & short
+      tentacleLen: 0.5,
+      scale: 1.4,
+      bellWidth: 1.3,
+      bellHeight: 0.72,
+      pulseMult: 0.55,
+    },
+    { speed: 0.3, agility: 0.3, glow: 0.4 }
   ),
 ]
 

@@ -4,8 +4,9 @@ import { useRef, useMemo } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import JellyBody, { JellyBodyHandle } from "./JellyBody"
-import { ocean, WORLD, valueNoise2, strokeEnvelope } from "@/lib/ocean"
+import { ocean, WORLD, valueNoise2, strokeEnvelope, oceanCurrent } from "@/lib/ocean"
 import { SPECIES, JellyConfig } from "@/lib/species"
+import { registerNpcPosition } from "@/lib/game"
 
 // ---------------------------------------------------------------------------
 // NPC jellyfish — 12 individuals, 6 color morphs, 8-pattern behavior FSM.
@@ -56,11 +57,13 @@ function makeNpc(i: number): NpcState {
   const angle = rand(0, Math.PI * 2)
   const radius = rand(12, WORLD.bounds * 0.8)
   const pos = new THREE.Vector3(Math.cos(angle) * radius, -depth, Math.sin(angle) * radius)
-  // deep individuals get the abyssal-red morph, shallow ones the bright morphs
-  // NPCs are citizens of the Jelly Lab: deep water belongs to the ABYSSAL
-  // morph, the sunlit column gets the other five species round-robin
-  const shallow = SPECIES.filter((s) => s.id !== "abyssal")
-  const sp = depth > 65 ? SPECIES.find((s) => s.id === "abyssal")! : shallow[i % shallow.length]
+  // NPCs are citizens of the ocean, sorted by the light they'd really live in:
+  // the deep species (abyssal, phantom, fireworks) haunt the dark column;
+  // the sunlit water gets the shallow morphs + lion's mane + the box jelly.
+  const deepIds = ["abyssal", "stygiomedusa", "halitrephes"]
+  const deep = SPECIES.filter((s) => deepIds.includes(s.id))
+  const shallow = SPECIES.filter((s) => !deepIds.includes(s.id))
+  const sp = depth > 65 ? deep[i % deep.length] : shallow[i % shallow.length]
   const cfg = sp.config
   return {
     pattern: PATTERNS[i % PATTERNS.length],
@@ -161,7 +164,7 @@ function stepNpc(npc: NpcState, delta: number, time: number, target: THREE.Vecto
   }
 }
 
-function Npc({ npc }: { npc: NpcState }) {
+function Npc({ npc, index }: { npc: NpcState; index: number }) {
   const groupRef = useRef<THREE.Group>(null)
   const bodyRef = useRef<JellyBodyHandle>(null)
   const scratch = useMemo(
@@ -188,7 +191,25 @@ function Npc({ npc }: { npc: NpcState }) {
     const s = scratch
 
     stepNpc(npc, delta, time, s.target)
+
+    // ride the same current as the player and the plankton
+    oceanCurrent(npc.pos, time, s.target)
+    npc.pos.addScaledVector(s.target, delta * 0.6)
+
+    // soft body-contact: the water between two bells shoves both apart —
+    // the player never clips through an NPC, and a passing player nudges it
+    const distSq = npc.pos.distanceToSquared(ocean.playerPos)
+    const contact = 2.2 * npc.scale + 1.4
+    if (distSq < contact * contact && distSq > 0.0001) {
+      const d = Math.sqrt(distSq)
+      const push = (1 - d / contact) * 3.5
+      s.dir.copy(npc.pos).sub(ocean.playerPos).divideScalar(d)
+      npc.vel.addScaledVector(s.dir, push * delta * 2)
+      ocean.playerVel.addScaledVector(s.dir, -push * delta * 1.2)
+    }
+
     group.position.copy(npc.pos)
+    registerNpcPosition(index, npc.pos)
 
     const speed = npc.vel.length()
     if (speed > 0.2) {
@@ -223,14 +244,22 @@ function Npc({ npc }: { npc: NpcState }) {
       <JellyBody
         ref={bodyRef}
         palette={cfg.palette}
-        tentacles={Math.max(14, Math.round(cfg.tentacles * 0.7))}
-        oralArms={Math.max(2, cfg.oralArms - 1)}
+        tentacles={Math.max(4, Math.round(cfg.tentacles * 0.7))}
+        oralArms={Math.max(2, cfg.oralArms - (cfg.oralArmScale && cfg.oralArmScale > 1.6 ? 0 : 1))}
         seed={Math.floor(npc.noiseSeed * 97) + 3}
         bellWidth={cfg.bellWidth}
         bellHeight={cfg.bellHeight}
         tentacleLen={cfg.tentacleLen}
         tipGlow={cfg.tipGlow}
         aura={cfg.aura}
+        bellOpacity={cfg.bellOpacity}
+        bellShape={cfg.bellShape}
+        fireworks={cfg.fireworks}
+        canalColor={cfg.canalColor}
+        spots={cfg.spots}
+        pedalia={cfg.pedalia}
+        oralArmScale={cfg.oralArmScale}
+        mane={cfg.mane}
       />
     </group>
   )
@@ -241,7 +270,7 @@ export default function NpcJellyfish() {
   return (
     <>
       {npcs.map((npc, i) => (
-        <Npc key={i} npc={npc} />
+        <Npc key={i} npc={npc} index={i} />
       ))}
     </>
   )

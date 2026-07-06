@@ -27,6 +27,10 @@ type NumKey =
   | "scale"
   | "pulseMult"
   | "tipGlow"
+  | "fireworks"
+  | "spots"
+  | "oralArmScale"
+  | "bellOpacity"
 
 interface SliderDef {
   label: string
@@ -43,6 +47,7 @@ const ANATOMY: SliderDef[] = [
   { label: "ORAL ARMS", key: "oralArms", min: 2, max: 6, step: 1, int: true },
   { label: "BELL WIDTH", key: "bellWidth", min: 0.75, max: 1.35, step: 0.05 },
   { label: "BELL HEIGHT", key: "bellHeight", min: 0.7, max: 1.4, step: 0.05 },
+  { label: "BELL OPACITY", key: "bellOpacity", min: 0, max: 1, step: 0.05 },
   { label: "SIZE", key: "scale", min: 0.6, max: 1.4, step: 0.05 },
   { label: "TEMPO", key: "pulseMult", min: 0.75, max: 1.3, step: 0.05 },
 ]
@@ -204,7 +209,7 @@ export default function CharacterMaker() {
           <SectionLabel>ANATOMY</SectionLabel>
           <div className="mb-4 space-y-2.5">
             {ANATOMY.map((s) => (
-              <Slider key={s.key} def={s} value={cfg[s.key]} onChange={(v) => setNum(s.key, v)} />
+              <Slider key={s.key} def={s} value={cfg[s.key] ?? 0} onChange={(v) => setNum(s.key, v)} />
             ))}
           </div>
 
@@ -216,6 +221,47 @@ export default function CharacterMaker() {
               value={cfg.tipGlow}
               onChange={(v) => setNum("tipGlow", v)}
             />
+            <Slider
+              def={{ label: "FIREWORKS", key: "fireworks", min: 0, max: 1, step: 0.1 }}
+              value={cfg.fireworks ?? 0}
+              onChange={(v) => setNum("fireworks", v)}
+            />
+            <Slider
+              def={{ label: "SPOTS", key: "spots", min: 0, max: 1, step: 0.1 }}
+              value={cfg.spots ?? 0}
+              onChange={(v) => setNum("spots", v)}
+            />
+            <Slider
+              def={{ label: "RIBBON ARMS", key: "oralArmScale", min: 1, max: 3, step: 0.1 }}
+              value={cfg.oralArmScale ?? 1}
+              onChange={(v) => setNum("oralArmScale", v)}
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] tracking-[0.15em] text-cyan-400/70">BELL SHAPE</span>
+              <button
+                onClick={() => updateCharacter({ bellShape: cfg.bellShape === "box" ? "dome" : "box" })}
+                className={`rounded border px-3 py-0.5 text-[9px] tracking-[0.2em] transition-colors ${
+                  cfg.bellShape === "box"
+                    ? "border-cyan-300/70 bg-cyan-300/15 text-cyan-100 shadow-[0_0_8px_rgba(103,232,249,0.3)]"
+                    : "border-cyan-300/20 bg-cyan-300/[0.03] text-cyan-400/60 hover:border-cyan-300/40"
+                }`}
+              >
+                {cfg.bellShape === "box" ? "BOX" : "DOME"}
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] tracking-[0.15em] text-cyan-400/70">MANE</span>
+              <button
+                onClick={() => updateCharacter({ mane: cfg.mane ? 0 : 1, pedalia: cfg.mane ? 0 : 8 })}
+                className={`rounded border px-3 py-0.5 text-[9px] tracking-[0.2em] transition-colors ${
+                  cfg.mane
+                    ? "border-cyan-300/70 bg-cyan-300/15 text-cyan-100 shadow-[0_0_8px_rgba(103,232,249,0.3)]"
+                    : "border-cyan-300/20 bg-cyan-300/[0.03] text-cyan-400/60 hover:border-cyan-300/40"
+                }`}
+              >
+                {cfg.mane ? "ON" : "OFF"}
+              </button>
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-[9px] tracking-[0.15em] text-cyan-400/70">AURA</span>
               <button

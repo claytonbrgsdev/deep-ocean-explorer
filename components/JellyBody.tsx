@@ -2,7 +2,7 @@
 
 import { useMemo, forwardRef, useImperativeHandle } from "react"
 import * as THREE from "three"
-import { GLSL_GESTURE, GLSL_BELLWAVE } from "@/lib/ocean"
+import { GLSL_GESTURE, GLSL_BELLWAVE, GLSL_NOISE } from "@/lib/ocean"
 
 // ---------------------------------------------------------------------------
 // JellyBody — shared anatomy for the player and every NPC jellyfish.
@@ -55,10 +55,67 @@ function makeBellGeometry(width = 1, height = 1): THREE.LatheGeometry {
   return new THREE.LatheGeometry(pts, 48)
 }
 
+// Cuboid bell for cubozoans (Chirodectes): a rounded box with a domed top and
+// near-vertical walls. Cross-sections are squircles (superellipse) so the
+// silhouette reads as a cube with softly rounded corners; the y-range matches
+// the dome (apex ≈ +height, rim below 0) so the SAME bell-wave physics apply.
+function makeBoxBellGeometry(width = 1, height = 1): THREE.BufferGeometry {
+  const radial = 64
+  const capRings = 10 // rounded top
+  const wallRings = 8 // vertical sides
+  const nExp = 5.0 // squircle exponent → rounded-square footprint
+  const squircle = (phi: number) => {
+    const c = Math.abs(Math.cos(phi))
+    const s = Math.abs(Math.sin(phi))
+    return 1 / Math.pow(Math.pow(c, nExp) + Math.pow(s, nExp), 1 / nExp)
+  }
+  const rings: { rs: number; y: number }[] = []
+  for (let i = 0; i <= capRings; i++) {
+    const t = i / capRings
+    const th = (t * Math.PI) / 2
+    rings.push({ rs: Math.pow(Math.sin(th), 0.62), y: Math.pow(Math.cos(th), 1.05) * height })
+  }
+  for (let j = 1; j <= wallRings; j++) {
+    const t = j / wallRings
+    rings.push({ rs: 1.0, y: -t * 0.62 * height })
+  }
+  rings.push({ rs: 0.9, y: -0.68 * height }) // inward velarium lip
+
+  const R = rings.length
+  const stride = radial + 1
+  const positions: number[] = []
+  const uvs: number[] = []
+  for (let r = 0; r < R; r++) {
+    for (let a = 0; a <= radial; a++) {
+      const phi = (a / radial) * Math.PI * 2
+      const rr = rings[r].rs * squircle(phi) * width
+      positions.push(Math.cos(phi) * rr, rings[r].y, Math.sin(phi) * rr)
+      uvs.push(a / radial, r / (R - 1))
+    }
+  }
+  const indices: number[] = []
+  for (let r = 0; r < R - 1; r++) {
+    for (let a = 0; a < radial; a++) {
+      const i0 = r * stride + a
+      const i1 = i0 + 1
+      const i2 = (r + 1) * stride + a
+      const i3 = i2 + 1
+      indices.push(i0, i2, i1, i1, i2, i3)
+    }
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3))
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2))
+  geo.setIndex(indices)
+  geo.computeVertexNormals()
+  return geo
+}
+
 const BELL_VERT = /* glsl */ `
   uniform float uTime;
   uniform float uPhase;
   uniform float uAmp;
+  uniform float uBox;
   varying vec3 vNormal;
   varying vec3 vViewDir;
   varying vec3 vLocal;
@@ -73,11 +130,13 @@ const BELL_VERT = /* glsl */ `
     pos.x *= squeeze;
     pos.z *= squeeze;
     pos.y *= 1.0 + uAmp * 0.4 * wave * rimW;
-    // rim ruffle with two harmonics — lappet-like scalloping, unhurried
+    // rim ruffle with two harmonics — lappet-like scalloping, unhurried.
+    // a cubozoan bell keeps crisp edges, so the ruffle is muted for boxes.
     float ang = atan(position.z, position.x);
     vec2 radial = normalize(position.xz + vec2(1e-4));
-    pos.xz += radial * 0.03 * sin(ang * 14.0 + uTime * 1.6) * rimW;
-    pos.xz += radial * 0.02 * sin(ang * 7.0 - uTime * 1.1) * rimW;
+    float ruffle = 1.0 - uBox * 0.75;
+    pos.xz += radial * 0.03 * sin(ang * 14.0 + uTime * 1.6) * rimW * ruffle;
+    pos.xz += radial * 0.02 * sin(ang * 7.0 - uTime * 1.1) * rimW * ruffle;
 
     vLocal = position;
     vNormal = normalize(normalMatrix * normal);
@@ -91,16 +150,23 @@ const BELL_FRAG = /* glsl */ `
   uniform float uTime;
   uniform float uPhase;
   uniform float uGlowBoost;
+  uniform float uFireworks;
+  uniform float uSpots;
+  uniform float uBox;
+  uniform float uBellOpacity;
   uniform vec3 uColorBell;
   uniform vec3 uColorGlow;
   uniform vec3 uColorOrgan;
+  uniform vec3 uColorCanal;
   varying vec3 vNormal;
   varying vec3 vViewDir;
   varying vec3 vLocal;
+  ${GLSL_NOISE}
   void main() {
     float fresnel = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 2.4);
 
-    // four-lobed gonad "flower" visible through the dome
+    // four-lobed gonad "flower" visible through the dome (the red "heart"
+    // of the box jelly reads through the same channel)
     float ang = atan(vLocal.z, vLocal.x);
     float rad = length(vLocal.xz);
     float lobes = pow(abs(sin(ang * 2.0)), 6.0);
@@ -111,22 +177,58 @@ const BELL_FRAG = /* glsl */ `
     col += uColorOrgan * organ * (0.55 + 0.45 * pulse);
     col += uColorGlow * uGlowBoost * (0.35 + 0.3 * pulse);
 
+    // dome-specific ornaments are muted on a cuboid bell
+    float domeMask = 1.0 - uBox * 0.9;
     // --- exumbrella ornaments ---
     // radial canal stripes across the upper dome (Chrysaora-style)
     float stripes = pow(abs(sin(ang * 8.0 + 0.4)), 6.0) * smoothstep(0.95, 0.5, rad) * smoothstep(0.18, 0.45, rad);
-    col += uColorOrgan * stripes * 0.4;
+    col += uColorOrgan * stripes * 0.4 * domeMask;
     // fine granular speckle (wart-like texture on the dome)
     float speck = sin(vLocal.x * 41.0) * sin(vLocal.y * 37.0 + 2.0) * sin(vLocal.z * 43.0 + 4.0);
     speck = smoothstep(0.5, 0.95, speck);
-    col += uColorGlow * speck * 0.14;
+    col += uColorGlow * speck * 0.14 * domeMask;
     // scalloped luminous band along the rim (lappet margin)
     float rimBand = smoothstep(0.3, 0.02, vLocal.y);
     float scallop = 0.5 + 0.5 * sin(ang * 28.0 + uTime * 0.5);
-    col += uColorGlow * rimBand * (0.12 + 0.28 * scallop);
+    col += uColorGlow * rimBand * (0.12 + 0.28 * scallop) * domeMask;
+
+    // --- Halitrephes "firework" canals: a symmetric radial starburst that
+    // only ignites where light reaches it (multiplied by fresnel+glow) ---
+    float fw = 0.0;
+    if (uFireworks > 0.001) {
+      float spokes = pow(abs(cos(ang * 13.5)), 20.0); // ~27 non-branching canals
+      float reach = smoothstep(0.03, 0.32, rad) * smoothstep(1.05, 0.4, rad);
+      fw = spokes * reach;
+      float hub = smoothstep(0.18, 0.0, rad);
+      float lit = 0.35 + 0.65 * fresnel + uGlowBoost;
+      col += uColorCanal * fw * 1.5 * uFireworks * lit;
+      col += mix(uColorCanal, uColorGlow, 0.4) * hub * (0.8 + 0.5 * pulse) * uFireworks;
+    }
+
+    // --- Chirodectes maculate spotting: dark cell-noise blotches with a
+    // faintly reddish rim, scattered across the box bell ---
+    float spotDark = 0.0;
+    if (uSpots > 0.001) {
+      float n = dn_noise(vLocal * 6.5 + 11.0);
+      float blob = smoothstep(0.60, 0.70, n);
+      float ring = smoothstep(0.55, 0.60, n) * (1.0 - smoothstep(0.66, 0.72, n));
+      spotDark = blob * uSpots;
+      col = mix(col, col * 0.22, spotDark);
+      col += uColorOrgan * ring * 0.45 * uSpots;
+    }
 
     float alpha = 0.16 + fresnel * 0.6 + organ * 0.35
-                + stripes * 0.12 + speck * 0.06 + rimBand * scallop * 0.14;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
+                + (stripes * 0.12 + speck * 0.06 + rimBand * scallop * 0.14) * domeMask
+                + fw * 0.55 * uFireworks + spotDark * 0.32;
+
+    // bell opacity: lift the body fill toward its own colour and push the alpha
+    // toward a solid, milky dome. 0 keeps the natural glass; 1 is near-opaque.
+    if (uBellOpacity > 0.001) {
+      col = mix(col, mix(col, uColorBell, 0.55) + uColorBell * 0.12, uBellOpacity);
+      alpha += uBellOpacity * 0.72 * (1.0 - alpha);
+    }
+    float cap = mix(0.92, 1.0, uBellOpacity);
+    gl_FragColor = vec4(col, clamp(alpha, 0.0, cap));
   }
 `
 
@@ -299,6 +401,22 @@ interface JellyBodyProps {
   tipGlow?: number
   /** orbiting plankton mote ring */
   aura?: boolean
+  /** ---- extended anatomy (real-species silhouettes) ---- */
+  /** 0 = natural translucent glass, 1 = solid milky bell */
+  bellOpacity?: number
+  bellShape?: "dome" | "box"
+  /** 0..1 — radiating firework canals (Halitrephes) */
+  fireworks?: number
+  /** colour of the firework canals; defaults to organ */
+  canalColor?: string
+  /** 0..1 — maculate dark spotting (Chirodectes) */
+  spots?: number
+  /** >0 gathers tentacles into N corner/lobe bundles (box=4, mane=8) */
+  pedalia?: number
+  /** ribbon oral-arm size multiplier (Stygiomedusa) */
+  oralArmScale?: number
+  /** 0..1 — finer/denser lion's-mane threads (Cyanea) */
+  mane?: number
 }
 
 function seededRand(seed: number) {
@@ -310,10 +428,31 @@ function seededRand(seed: number) {
 }
 
 const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody(
-  { palette, tentacles = 28, oralArms = 4, seed = 1, bellWidth = 1, bellHeight = 1, tentacleLen = 1, tipGlow = 0, aura = false },
+  {
+    palette,
+    tentacles = 28,
+    oralArms = 4,
+    seed = 1,
+    bellWidth = 1,
+    bellHeight = 1,
+    tentacleLen = 1,
+    tipGlow = 0,
+    aura = false,
+    bellOpacity = 0,
+    bellShape = "dome",
+    fireworks = 0,
+    canalColor,
+    spots = 0,
+    pedalia = 0,
+    oralArmScale = 1,
+    mane = 0,
+  },
   ref
 ) {
-  const bellGeometry = useMemo(() => makeBellGeometry(bellWidth, bellHeight), [bellWidth, bellHeight])
+  const bellGeometry = useMemo(
+    () => (bellShape === "box" ? makeBoxBellGeometry(bellWidth, bellHeight) : makeBellGeometry(bellWidth, bellHeight)),
+    [bellShape, bellWidth, bellHeight]
+  )
 
   const shared = useMemo<JellyUniforms>(
     () => ({
@@ -341,12 +480,17 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
         uPhase: shared.phase,
         uAmp: shared.amp,
         uGlowBoost: shared.glowBoost,
+        uBox: { value: bellShape === "box" ? 1 : 0 },
+        uBellOpacity: { value: bellOpacity },
+        uFireworks: { value: fireworks },
+        uSpots: { value: spots },
         uColorBell: { value: new THREE.Color(palette.bell) },
         uColorGlow: { value: new THREE.Color(palette.glow) },
         uColorOrgan: { value: new THREE.Color(palette.organ) },
+        uColorCanal: { value: new THREE.Color(canalColor ?? palette.organ) },
       },
     })
-  }, [palette, shared])
+  }, [palette, shared, bellShape, bellOpacity, fireworks, spots, canalColor])
 
   const strandMaterial = useMemo(() => {
     return new THREE.ShaderMaterial({
@@ -383,13 +527,26 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     const len = new Float32Array(tentacles)
     const phase = new Float32Array(tentacles)
     const thick = new Float32Array(tentacles)
+    // box corners are tighter fans farther out; lion's-mane lobes are broader
+    const clusterSpread = pedalia === 4 ? 0.55 : 0.8
+    const clusterRadius = pedalia === 4 ? 1.12 : 0.86
     for (let i = 0; i < tentacles; i++) {
-      angle[i] = (i / tentacles) * Math.PI * 2 + rand() * 0.2
-      radius[i] = 0.82 + rand() * 0.12
-      // longer strands: the bigger wave amplitude eats projected length
-      len[i] = (3.4 + rand() * 3.0) * tentacleLen
+      if (pedalia > 0) {
+        // gather strands into N bundles (pedalia corners / mane lobes)
+        const cluster = i % pedalia
+        const clusterAng = (cluster / pedalia) * Math.PI * 2 + Math.PI / pedalia
+        angle[i] = clusterAng + (rand() - 0.5) * clusterSpread
+        radius[i] = clusterRadius + rand() * 0.1
+      } else {
+        angle[i] = (i / tentacles) * Math.PI * 2 + rand() * 0.2
+        radius[i] = 0.82 + rand() * 0.12
+      }
+      // longer strands: the bigger wave amplitude eats projected length.
+      // a mane runs longer and more varied — some threads stream far past the rest
+      len[i] = (3.4 + rand() * 3.0) * tentacleLen * (mane > 0 ? 1.0 + rand() * 0.9 : 1.0)
       phase[i] = rand() * Math.PI * 2
-      thick[i] = 0.014 + rand() * 0.016
+      // mane threads are finer and more uniform; default strands stay chunkier
+      thick[i] = mane > 0 ? 0.007 + rand() * 0.008 : 0.014 + rand() * 0.016
     }
     inst.setAttribute("aAngle", new THREE.InstancedBufferAttribute(angle, 1))
     inst.setAttribute("aRadius", new THREE.InstancedBufferAttribute(radius, 1))
@@ -398,11 +555,14 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     inst.setAttribute("aThick", new THREE.InstancedBufferAttribute(thick, 1))
     inst.instanceCount = tentacles
     return inst
-  }, [tentacles, seed, tentacleLen])
+  }, [tentacles, seed, tentacleLen, pedalia, mane])
 
-  // wide frilly oral arms under the dome — fleshy ruffled curtains
+  // wide frilly oral arms under the dome — fleshy ruffled curtains.
+  // oralArmScale blows them up into the giant ribbon "banners" of Stygiomedusa.
   const armGeometry = useMemo(() => {
-    const geo = new THREE.PlaneGeometry(0.36, 1, 6, 40)
+    // more length segments on giant arms so the long ribbon can undulate
+    const lenSegs = oralArmScale > 1.6 ? 64 : 40
+    const geo = new THREE.PlaneGeometry(0.36 * oralArmScale, 1, 6, lenSegs)
     geo.translate(0, -0.5, 0)
     const inst = new THREE.InstancedBufferGeometry()
     inst.index = geo.index
@@ -416,7 +576,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     for (let i = 0; i < oralArms; i++) {
       angle[i] = (i / oralArms) * Math.PI * 2 + 0.4
       radius[i] = 0.18 + rand() * 0.08
-      len[i] = 2.5 + rand() * 1.2
+      len[i] = (2.5 + rand() * 1.2) * oralArmScale
       phase[i] = rand() * Math.PI * 2
       thick[i] = 1.0 // plane already has width; thickness scales x/z
     }
@@ -427,7 +587,7 @@ const JellyBody = forwardRef<JellyBodyHandle, JellyBodyProps>(function JellyBody
     inst.setAttribute("aThick", new THREE.InstancedBufferAttribute(thick, 1))
     inst.instanceCount = oralArms
     return inst
-  }, [oralArms, seed])
+  }, [oralArms, seed, oralArmScale])
 
   const armMaterial = useMemo(() => {
     const m = strandMaterial.clone()

@@ -3,6 +3,12 @@
 import { Canvas } from "@react-three/fiber"
 import PlayerJellyfish from "./PlayerJellyfish"
 import NpcJellyfish from "./NpcJellyfish"
+import Plankton from "./Plankton"
+import GameDirector from "./GameDirector"
+import MantaRays from "./MantaRay"
+import SeaTurtles from "./SeaTurtle"
+import Shark from "./Shark"
+import Octopus from "./Octopus"
 import FishSchools from "./FishSchools"
 import Seafloor from "./Seafloor"
 import AbyssalForest from "./AbyssalForest"
@@ -46,9 +52,16 @@ export default function Scene() {
         <AbyssalForest />
         <FishSchools />
         <NpcJellyfish />
+        <MantaRays />
+        <SeaTurtles />
+        <Shark />
+        <Octopus />
+        <Plankton />
 
         {/* player mounts last so its useFrame (movement + camera rig) runs after NPCs */}
         <PlayerJellyfish />
+        {/* director runs after everything — reads final telemetry each frame */}
+        <GameDirector />
       </Canvas>
     </>
   )
