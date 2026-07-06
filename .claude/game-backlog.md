@@ -23,14 +23,22 @@ implementa, verifica no preview (tsc + gameplay simulado + screenshot) e marca a
       escurece com a profundidade, wash em ondas, shimmer de superfície, baixo de
       tensão na caçada do tubarão; one-shots ping (comer), whoosh (pulso), chime
       (missão). Mute com M / botão no HUD. (iteração 5)
-- [ ] Beacon 3D de missão (coluna de luz/marcador no alvo quando aplicável).
-- [ ] Minimap / radar circular (blooms de plâncton, NPCs, megafauna).
+- [x] Beacon 3D de missão (MissionBeacon.tsx): pilar de luz + núcleo + anel girante
+      sobre o alvo das missões espaciais (feast/bloom→bloom mais próximo,
+      social→NPC não-conhecido, escort→tartaruga, octopus→polvo). (iteração 6)
+- [x] Minimap/radar sonar no HUD: disco 55 m com blooms (âmbar), NPCs (azul),
+      tartarugas (verde), mantas (cinza), tubarão (vermelho, pinga na caçada,
+      "PREDATOR LOCKED ON"), polvo (roxo após achado); fade por diferença
+      vertical >25 m. (iteração 6)
 - [ ] Partículas de rastro atrás do jogador em alta velocidade.
 - [ ] Modo foto (esconder HUD, câmera livre).
 
 ## Física / polish
-- [ ] Vórtice visível no jato do sino (anel de partículas por pulso).
-- [ ] Turbulência de esteira: NPCs próximos balançam quando o jogador passa rápido.
+- [x] Vórtice visível no jato do sino: pool de 6 anéis (torus aditivo) soltos um
+      por power stroke, em espaço de mundo — expandem, derivam para trás e
+      dissipam onde a água ficou. (iteração 7)
+- [x] Turbulência de esteira: jogador passando a >4 m/s a <5 m chacoalha o
+      NPC (jitter na velocidade proporcional à passada). (iteração 7)
 - [ ] Interação corrente × terreno (aceleração em desfiladeiros).
 
 ## Performance

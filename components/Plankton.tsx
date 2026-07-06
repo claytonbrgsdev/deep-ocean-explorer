@@ -39,9 +39,10 @@ interface Mote {
   size: number
 }
 
-// most motes live in "blooms" — findable clouds instead of a uniform mist
+// most motes live in "blooms" — findable clouds instead of a uniform mist.
+// Exported: the mission beacon and the HUD radar point at bloom centers.
 const BLOOM_COUNT = 14
-const blooms: THREE.Vector3[] = Array.from({ length: BLOOM_COUNT }, (_, i) => {
+export const blooms: THREE.Vector3[] = Array.from({ length: BLOOM_COUNT }, (_, i) => {
   const angle = (i / BLOOM_COUNT) * Math.PI * 2 + Math.random() * 0.6
   const radius = 10 + Math.random() * WORLD.bounds * 0.75
   const depth = 4 + Math.random() * 108

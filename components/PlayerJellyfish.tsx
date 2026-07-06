@@ -37,6 +37,9 @@ const MAX_SPEED = 8
 const IDLE_PULSE_HZ = 0.7
 const SWIM_PULSE_HZ = 1.7
 
+// torus geometry lies in the XY plane — its axis is +Z
+const Z_AXIS = new THREE.Vector3(0, 0, 1)
+
 interface Keys {
   f: boolean
   b: boolean
@@ -85,7 +88,24 @@ export default function PlayerJellyfish() {
     []
   )
 
-  const pulse = useRef({ phase: 0 })
+  const pulse = useRef({ phase: 0, lastCycle: 0 })
+
+  // vortex-ring pool: every power stroke sheds a ring into the water (the
+  // "smoke ring" a real medusa leaves behind). World-space, so rings stay
+  // where the water is while the body swims on.
+  const RINGS = 6
+  const rings = useMemo(
+    () =>
+      Array.from({ length: RINGS }, () => ({
+        pos: new THREE.Vector3(),
+        dir: new THREE.Vector3(0, 1, 0),
+        quat: new THREE.Quaternion(),
+        age: 9, // >1 = free slot
+      })),
+    []
+  )
+  const ringRefs = useRef<(THREE.Mesh | null)[]>([])
+  const ringNext = useRef(0)
 
   useEffect(() => {
     const set = (code: string, v: boolean) => {
@@ -283,6 +303,40 @@ export default function PlayerJellyfish() {
       lightRef.current.distance = 10 + st.glow * 14
     }
 
+    // --- vortex rings: shed one per power stroke while really swimming ---
+    const cycleNow = Math.floor(phase / (Math.PI * 2))
+    if (cycleNow !== pulse.current.lastCycle) {
+      pulse.current.lastCycle = cycleNow
+      if (hasInput && speed > 1.5) {
+        const ring = rings[ringNext.current]
+        ringNext.current = (ringNext.current + 1) % RINGS
+        // born at the bell mouth (behind the body along the swim axis)
+        ring.pos.copy(ocean.playerPos).addScaledVector(s.fwd, -0.9 * cfg.scale)
+        ring.dir.copy(s.fwd)
+        ring.quat.setFromUnitVectors(Z_AXIS, s.fwd) // torus axis along the jet
+        ring.age = 0
+      }
+    }
+    for (let i = 0; i < RINGS; i++) {
+      const ring = rings[i]
+      const mesh = ringRefs.current[i]
+      if (!mesh) continue
+      if (ring.age > 1) {
+        mesh.visible = false
+        continue
+      }
+      ring.age += delta * 0.9
+      const k = Math.min(ring.age, 1)
+      // the shed vortex drifts backward and swells as it dissipates
+      ring.pos.addScaledVector(ring.dir, -1.6 * delta * (1 - k * 0.6))
+      mesh.visible = true
+      mesh.position.copy(ring.pos)
+      mesh.quaternion.copy(ring.quat)
+      mesh.scale.setScalar((0.55 + k * 1.9) * cfg.scale)
+      const mat = mesh.material as THREE.MeshBasicMaterial
+      mat.opacity = 0.28 * (1 - k) * (1 - k)
+    }
+
     // --- store telemetry for HUD / environment systems ---
     ocean.speed = speed
     ocean.depth = -ocean.playerPos.y
@@ -326,7 +380,29 @@ export default function PlayerJellyfish() {
   })
 
   return (
-    <group ref={groupRef} position={[0, -20, 0]} scale={cfg.scale}>
+    <>
+      {/* shed vortex rings live in world space — siblings, not children,
+          so they stay in the water the body has already left */}
+      {Array.from({ length: RINGS }, (_, i) => (
+        <mesh
+          key={i}
+          visible={false}
+          ref={(el) => {
+            ringRefs.current[i] = el
+          }}
+        >
+          <torusGeometry args={[1, 0.05, 6, 32]} />
+          <meshBasicMaterial
+            color="#bfe9ff"
+            transparent
+            opacity={0}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      <group ref={groupRef} position={[0, -20, 0]} scale={cfg.scale}>
       <JellyBody
         ref={bodyRef}
         palette={cfg.palette}
@@ -348,6 +424,7 @@ export default function PlayerJellyfish() {
         mane={cfg.mane}
       />
       <pointLight ref={lightRef} color={cfg.palette.glow} distance={16} decay={1.8} intensity={2.5} />
-    </group>
+      </group>
+    </>
   )
 }

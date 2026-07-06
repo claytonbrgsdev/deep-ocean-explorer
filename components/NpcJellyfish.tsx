@@ -208,6 +208,14 @@ function Npc({ npc, index }: { npc: NpcState; index: number }) {
       ocean.playerVel.addScaledVector(s.dir, -push * delta * 1.2)
     }
 
+    // wake turbulence: a player tearing past rattles the drifters it skims
+    if (ocean.speed > 4 && distSq < 25 && distSq > 0.0001) {
+      const wake = (ocean.speed / 8) * 0.9
+      npc.vel.x += (Math.random() - 0.5) * wake * delta * 10
+      npc.vel.y += (Math.random() - 0.5) * wake * delta * 7
+      npc.vel.z += (Math.random() - 0.5) * wake * delta * 10
+    }
+
     group.position.copy(npc.pos)
     registerNpcPosition(index, npc.pos)
 

@@ -4,11 +4,25 @@ import { useEffect, useState, useRef } from "react"
 import { ocean, ZONES } from "@/lib/ocean"
 import { game, currentMission, MISSIONS, Toast } from "@/lib/game"
 import { oceanAudio } from "@/lib/audio"
+import { blooms } from "./Plankton"
+import { mantaPositions } from "./MantaRay"
+import { sharkPosition, sharkState } from "./Shark"
+import { octopusPosition } from "./Octopus"
 
 // ---------------------------------------------------------------------------
 // HUD — samples the mutable ocean + game stores at 8Hz. The 3D loop never
 // calls setState; React work is decoupled from the render loop entirely.
 // ---------------------------------------------------------------------------
+
+interface RadarDot {
+  x: number // -1..1 across the radar disc
+  y: number
+  kind: "bloom" | "npc" | "turtle" | "manta" | "shark" | "octopus"
+  faded: boolean // far above/below the player's plane
+}
+
+// radar range in meters (world → disc scale)
+const RADAR_RANGE = 55
 
 interface Sample {
   depth: number
@@ -28,6 +42,8 @@ interface Sample {
   missionProgress: number
   missionTarget: number
   toasts: Toast[]
+  dots: RadarDot[]
+  sharkChasing: boolean
 }
 
 export default function HUD() {
@@ -35,6 +51,7 @@ export default function HUD() {
     depth: 20, x: 0, z: 0, speed: 0, zoneIndex: 1, light: 75, fps: 0,
     started: false, energy: 100, score: 0, xp: 0, level: 1,
     missionIndex: 0, missionProgress: 0, missionTarget: 40, toasts: [],
+    dots: [], sharkChasing: false,
   })
   const frames = useRef({ count: 0, last: performance.now(), fps: 60 })
   const [muted, setMuted] = useState(false)
@@ -72,6 +89,26 @@ export default function HUD() {
       f.count = 0
       f.last = now
       const mission = currentMission()
+
+      // --- radar sweep: project everything alive onto the disc ---
+      const dots: RadarDot[] = []
+      const px = ocean.playerPos.x
+      const py = ocean.playerPos.y
+      const pz = ocean.playerPos.z
+      const collect = (pos: { x: number; y: number; z: number } | undefined, kind: RadarDot["kind"]) => {
+        if (!pos) return
+        const dx = pos.x - px
+        const dz = pos.z - pz
+        if (dx * dx + dz * dz > RADAR_RANGE * RADAR_RANGE) return
+        dots.push({ x: dx / RADAR_RANGE, y: dz / RADAR_RANGE, kind, faded: Math.abs(pos.y - py) > 25 })
+      }
+      blooms.forEach((b) => collect(b, "bloom"))
+      game.npcPositions.forEach((p) => collect(p, "npc"))
+      game.turtlePositions.forEach((p) => collect(p, "turtle"))
+      mantaPositions.forEach((p) => collect(p, "manta"))
+      collect(sharkPosition, "shark")
+      if (game.octopusFound) collect(octopusPosition, "octopus")
+
       setS({
         depth: ocean.depth,
         x: ocean.playerPos.x,
@@ -89,6 +126,8 @@ export default function HUD() {
         missionProgress: mission.value(game),
         missionTarget: mission.target,
         toasts: [...game.toasts],
+        dots,
+        sharkChasing: sharkState.mode === "chase",
       })
     }, 125)
     return () => clearInterval(id)
@@ -238,6 +277,44 @@ export default function HUD() {
       {/* fps */}
       <div className="absolute top-5 right-5 rounded border border-cyan-300/15 bg-[#02121f]/60 px-2.5 py-1 text-[10px] text-cyan-200/70 tabular-nums">
         {s.fps} FPS
+      </div>
+
+      {/* radar — top-down sonar disc, player at center, north up */}
+      <div className="absolute bottom-16 right-5 flex flex-col items-center gap-1">
+        <svg width="132" height="132" viewBox="-70 -70 140 140" className="opacity-90">
+          <circle r="66" fill="#02121f" fillOpacity="0.55" stroke="rgba(103,232,249,0.25)" strokeWidth="1" />
+          <circle r="44" fill="none" stroke="rgba(103,232,249,0.12)" strokeWidth="1" />
+          <circle r="22" fill="none" stroke="rgba(103,232,249,0.12)" strokeWidth="1" />
+          <line x1="-66" y1="0" x2="66" y2="0" stroke="rgba(103,232,249,0.08)" strokeWidth="1" />
+          <line x1="0" y1="-66" x2="0" y2="66" stroke="rgba(103,232,249,0.08)" strokeWidth="1" />
+          {s.dots.map((d, i) => {
+            const color =
+              d.kind === "shark" ? "#ff4b4b"
+              : d.kind === "bloom" ? "#ffd98a"
+              : d.kind === "turtle" ? "#6fd08a"
+              : d.kind === "manta" ? "#cfd8dd"
+              : d.kind === "octopus" ? "#c084fc"
+              : "#7fd4ff"
+            const r = d.kind === "shark" ? 3.5 : d.kind === "manta" ? 3 : 2.2
+            return (
+              <circle
+                key={i}
+                cx={d.x * 62}
+                cy={d.y * 62}
+                r={r}
+                fill={color}
+                opacity={d.faded ? 0.3 : 0.9}
+                className={d.kind === "shark" && s.sharkChasing ? "animate-ping" : undefined}
+              />
+            )
+          })}
+          {/* player */}
+          <circle r="3" fill="#e8fbff" />
+          <circle r="6" fill="none" stroke="rgba(232,251,255,0.4)" strokeWidth="1" />
+        </svg>
+        <span className={`text-[9px] tracking-[0.25em] ${s.sharkChasing ? "text-rose-300/90 animate-pulse" : "text-cyan-400/40"}`}>
+          {s.sharkChasing ? "PREDATOR LOCKED ON" : "SONAR 55m"}
+        </span>
       </div>
 
       {/* controls */}

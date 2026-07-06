@@ -9,6 +9,7 @@ import MantaRays from "./MantaRay"
 import SeaTurtles from "./SeaTurtle"
 import Shark from "./Shark"
 import Octopus from "./Octopus"
+import MissionBeacon from "./MissionBeacon"
 import FishSchools from "./FishSchools"
 import Seafloor from "./Seafloor"
 import AbyssalForest from "./AbyssalForest"
@@ -57,6 +58,7 @@ export default function Scene() {
         <Shark />
         <Octopus />
         <Plankton />
+        <MissionBeacon />
 
         {/* player mounts last so its useFrame (movement + camera rig) runs after NPCs */}
         <PlayerJellyfish />
