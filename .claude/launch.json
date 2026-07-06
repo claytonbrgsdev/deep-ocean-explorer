@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "deep-ocean-v2",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "PATH=/opt/homebrew/opt/node/bin:$PATH pnpm dev"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}
