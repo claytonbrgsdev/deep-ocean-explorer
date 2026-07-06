@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { ocean, ZONES } from "@/lib/ocean"
 import { game, currentMission, MISSIONS, Toast } from "@/lib/game"
+import { oceanAudio } from "@/lib/audio"
 
 // ---------------------------------------------------------------------------
 // HUD — samples the mutable ocean + game stores at 8Hz. The 3D loop never
@@ -36,6 +37,21 @@ export default function HUD() {
     missionIndex: 0, missionProgress: 0, missionTarget: 40, toasts: [],
   })
   const frames = useRef({ count: 0, last: performance.now(), fps: 60 })
+  const [muted, setMuted] = useState(false)
+
+  // M toggles the ocean sound
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyM") {
+        setMuted((m) => {
+          oceanAudio.setMuted(!m)
+          return !m
+        })
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
 
   // cheap FPS meter: count rAF ticks between HUD samples
   useEffect(() => {
@@ -230,7 +246,18 @@ export default function HUD() {
           <Key>W A S D</Key> swim &nbsp; <Key>SPACE</Key> rise &nbsp; <Key>SHIFT</Key> dive
         </p>
         <p>
-          <Key>DRAG</Key> orbit camera &nbsp; <Key>SCROLL</Key> zoom
+          <Key>DRAG</Key> orbit camera &nbsp; <Key>SCROLL</Key> zoom &nbsp; <Key>M</Key>{" "}
+          <button
+            className="pointer-events-auto hover:text-cyan-100 transition-colors"
+            onClick={() => {
+              setMuted((m) => {
+                oceanAudio.setMuted(!m)
+                return !m
+              })
+            }}
+          >
+            {muted ? "sound off" : "sound on"}
+          </button>
         </p>
       </div>
 

@@ -1,9 +1,11 @@
 "use client"
 
-import { useRef } from "react"
+import { useRef, useEffect } from "react"
 import { useFrame } from "@react-three/fiber"
 import { ocean } from "@/lib/ocean"
 import { game, advanceMissions, expireToasts, currentMission } from "@/lib/game"
+import { oceanAudio } from "@/lib/audio"
+import { sharkState } from "./Shark"
 
 // ---------------------------------------------------------------------------
 // GameDirector — invisible conductor. Runs once per frame, after the player
@@ -20,6 +22,12 @@ const ENERGY_FLOOR = 4 // never fully strand the player
 
 export default function GameDirector() {
   const prev = useRef({ x: 0, y: -20, z: 0, init: false })
+  const audioPrev = useRef({ eaten: 0, deepEaten: 0, missionIndex: 0, pulseCycle: 0 })
+
+  // audio can only start after a user gesture (autoplay policy)
+  useEffect(() => {
+    oceanAudio.armAutoStart()
+  }, [])
 
   useFrame((state, dt) => {
     const delta = Math.min(dt, 0.05)
@@ -73,6 +81,29 @@ export default function GameDirector() {
       }
 
       advanceMissions()
+    }
+
+    // --- audio: ambient bed + event one-shots (diff the counters) ---
+    const ap = audioPrev.current
+    oceanAudio.update(delta, {
+      depth: ocean.depth,
+      speed: ocean.speed,
+      chasing: sharkState.mode === "chase",
+    })
+    if (game.planktonEaten !== ap.eaten) {
+      oceanAudio.ping(game.deepPlanktonEaten !== ap.deepEaten)
+      ap.eaten = game.planktonEaten
+      ap.deepEaten = game.deepPlanktonEaten
+    }
+    if (game.missionIndex !== ap.missionIndex) {
+      oceanAudio.chime()
+      ap.missionIndex = game.missionIndex
+    }
+    // one whoosh per completed pulse cycle, audible only when really moving
+    const cycle = Math.floor(ocean.pulsePhase / (Math.PI * 2))
+    if (cycle !== ap.pulseCycle) {
+      if (ocean.speed > 1.2) oceanAudio.whoosh(ocean.speed / 8)
+      ap.pulseCycle = cycle
     }
 
     expireToasts(performance.now())

@@ -19,8 +19,10 @@ implementa, verifica no preview (tsc + gameplay simulado + screenshot) e marca a
       Cauda de 3 juntas com frequência ligada ao esforço. (iteração 3)
 
 ## Experiência / imersão
-- [ ] Áudio ambiente (WebAudio): drone subaquático por zona de profundidade,
-      "ping" bioluminescente ao comer plâncton, whoosh no pulso.
+- [x] Áudio ambiente (WebAudio, 100% sintetizado em lib/audio.ts): rumble que
+      escurece com a profundidade, wash em ondas, shimmer de superfície, baixo de
+      tensão na caçada do tubarão; one-shots ping (comer), whoosh (pulso), chime
+      (missão). Mute com M / botão no HUD. (iteração 5)
 - [ ] Beacon 3D de missão (coluna de luz/marcador no alvo quando aplicável).
 - [ ] Minimap / radar circular (blooms de plâncton, NPCs, megafauna).
 - [ ] Partículas de rastro atrás do jogador em alta velocidade.
